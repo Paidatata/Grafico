@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Gráfico de circulação ferroviária interativo para visualização e edição de escalas planejadas e realizadas.">
+    <title>Grafico - Circulação Ferroviária Interativa</title>
+    
+    <!-- Premium Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="index.css">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="logo-icon">🛤️</span>
+                <div class="title-group">
+                    <h1 id="app-title">Grafico</h1>
+                    <p class="subtitle">Circulação Ferroviária &bullet; Linha 710</p>
+                </div>
+            </div>
+            
+            <div class="header-controls">
+                <div class="line-selector">
+                    <button class="tab-btn active" id="btn-l10" onclick="switchLine('Line 10')">Linha 10 (Turquesa)</button>
+                    <button class="tab-btn" id="btn-l7" onclick="switchLine('Line 7')">Linha 7 (Rubi)</button>
+                    <button class="tab-btn" id="btn-l710" onclick="switchLine('Line 710')">Linha 710 (Unificada)</button>
+                </div>
+                
+                <div class="file-upload-wrapper">
+                    <label for="json-upload" class="upload-label" id="upload-label-id">
+                        <span class="upload-icon">📂</span> Importar JSON
+                    </label>
+                    <input type="file" id="json-upload" accept=".json" onchange="handleFileUpload(event)">
+                </div>
+                
+                <button class="btn btn-primary" id="btn-save" onclick="exportData()">💾 Exportar Grade</button>
+            </div>
+        </header>
+
+        <!-- Main Content Layout -->
+        <main class="main-content">
+            <!-- Sidebar (Train List) -->
+            <aside class="sidebar glass-panel">
+                <div class="panel-header">
+                    <h2>Trens Programados</h2>
+                    <span class="badge" id="train-count">0 Trens</span>
+                </div>
+                
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-train" placeholder="Buscar trem (ex: G24, J21)..." oninput="filterTrains()">
+                </div>
+                
+                <div class="toggle-buttons">
+                    <button class="btn btn-secondary btn-sm" id="btn-mock-real" onclick="loadMockRealizedData()">📈 Mostrar Realizado</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetToOriginal()">🔄 Resetar</button>
+                </div>
+                
+                <div class="train-list-container">
+                    <ul id="train-list" class="train-list">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </div>
+            </aside>
+
+            <!-- Graphic Display Area -->
+            <section class="graphic-area glass-panel">
+                <div class="panel-header">
+                    <h2>Diagrama de Horários (Gráfico de Marey)</h2>
+                    <div class="legend">
+                        <span class="legend-item"><span class="line-style planned-dash"></span> Planejado</span>
+                        <span class="legend-item"><span class="line-style actual-solid"></span> Realizado</span>
+                        <span class="legend-item"><span class="node-style"></span> Nó Arrastável</span>
+                    </div>
+                </div>
+                
+                <!-- SVG Scrollable Container -->
+                <div class="chart-scroll-container" id="chart-container">
+                    <!-- The SVG will be generated here dynamically -->
+                </div>
+            </section>
+        </main>
+        
+        <!-- Live Tooltip -->
+        <div id="tooltip" class="tooltip hidden"></div>
+    </div>
+    
+    <!-- Application Logic -->
+    <script src="app.js"></script>
+</body>
+</html>

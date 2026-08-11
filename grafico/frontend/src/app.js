@@ -1,0 +1,663 @@
+// ==========================================================================
+// Config & Constant Definitions
+// ==========================================================================
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// Dimensions
+const CHART_WIDTH = 12000; // Represents 04:00 to 24:00 (20 hours * 600px/hour)
+const CHART_HEIGHT = 800;
+
+// Margins
+const MARGIN_LEFT = 150; // For station names
+const MARGIN_RIGHT = 100;
+const MARGIN_TOP = 50;
+const MARGIN_BOTTOM = 50;
+
+const USABLE_WIDTH = CHART_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+const USABLE_HEIGHT = CHART_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
+
+// Scales
+// Time starts at 04:00 (4 hours) and ends at 24:00 (24 hours). Total 20 hours.
+const START_HOUR = 4;
+const END_HOUR = 24;
+const TOTAL_HOURS = END_HOUR - START_HOUR;
+
+// Coordinate helpers
+// Time mapping: X pixel to Minutes from midnight
+// X coordinate in DXF had scale: 1 minute = 20 units.
+// In our SVG viewport, we map X linearly between MARGIN_LEFT and CHART_WIDTH - MARGIN_RIGHT
+function timeToX(timeStr) {
+    const [h, m, s] = timeStr.split(":").map(Number);
+    const totalMinutes = h * 60 + m + (s / 60);
+    const minTime = START_HOUR * 60;
+    const maxTime = END_HOUR * 60;
+    
+    const pct = (totalMinutes - minTime) / (maxTime - minTime);
+    return MARGIN_LEFT + pct * USABLE_WIDTH;
+}
+
+function xToTime(x) {
+    const pct = (x - MARGIN_LEFT) / USABLE_WIDTH;
+    const minTime = START_HOUR * 60;
+    const maxTime = END_HOUR * 60;
+    
+    const totalMinutes = minTime + pct * (maxTime - minTime);
+    
+    const h = Math.max(START_HOUR, Math.min(END_HOUR, Math.floor(totalMinutes / 60))) % 24;
+    const m = Math.floor(totalMinutes % 60);
+    const s = Math.floor((totalMinutes * 60) % 60);
+    
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function timeStrToMinutes(timeStr) {
+    const [h, m, s] = timeStr.split(":").map(Number);
+    return h * 60 + m + (s / 60);
+}
+
+function minutesToTimeStr(totalMinutes) {
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = Math.floor(totalMinutes % 60);
+    const s = Math.floor((totalMinutes * 60) % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Station metadata
+const stations = {
+    "Line 10": [
+        {"id": "BFU", "name": "Barra Funda", "y_dxf": 5860.32},
+        {"id": "LUZ", "name": "Luz", "y_dxf": 5380.32},
+        {"id": "BAS", "name": "Brás", "y_dxf": 4980.32},
+        {"id": "MOC", "name": "Juventus-Mooca", "y_dxf": 4740.32},
+        {"id": "IPG", "name": "Ipiranga", "y_dxf": 4380.32},
+        {"id": "TMD", "name": "Tamanduateí", "y_dxf": 4180.32},
+        {"id": "SCS", "name": "São Caetano do Sul", "y_dxf": 3860.32},
+        {"id": "UTG", "name": "Utinga", "y_dxf": 3420.32},
+        {"id": "PSA", "name": "Prefeito Saladino", "y_dxf": 3220.32},
+        {"id": "SAN", "name": "Santo André", "y_dxf": 2980.32},
+        {"id": "CPV", "name": "Capuava", "y_dxf": 2500.32},
+        {"id": "MAU", "name": "Mauá", "y_dxf": 2100.32},
+        {"id": "GPT", "name": "Guapituba", "y_dxf": 1660.32},
+        {"id": "RPI", "name": "Ribeirão Pires", "y_dxf": 1100.32},
+        {"id": "RGS", "name": "Rio Grande da Serra", "y_dxf": 500.32}
+    ],
+    "Line 7": [
+        {"id": "JUN", "name": "Jundiaí", "y_dxf": 11520.32},
+        {"id": "VAU", "name": "Várzea Paulista", "y_dxf": 11220.32},
+        {"id": "CLP", "name": "Campo Limpo Paulista", "y_dxf": 10900.32},
+        {"id": "BTJ", "name": "Botujuru", "y_dxf": 10580.32},
+        {"id": "FDR", "name": "Francisco Morato", "y_dxf": 10300.32},
+        {"id": "BFI", "name": "Baltazar Fidélis", "y_dxf": 9940.32},
+        {"id": "FMO", "name": "Franco da Rocha", "y_dxf": 9500.32},
+        {"id": "CAI", "name": "Caieiras", "y_dxf": 9260.32},
+        {"id": "PRT", "name": "Perus", "y_dxf": 8700.32},
+        {"id": "VPL", "name": "Vila Aurora", "y_dxf": 8260.32},
+        {"id": "JRG", "name": "Jaraguá", "y_dxf": 7900.32},
+        {"id": "VCL", "name": "Vila Clarice", "y_dxf": 7500.32},
+        {"id": "PRU", "name": "Pirituba", "y_dxf": 7300.32},
+        {"id": "PQR", "name": "Piqueri", "y_dxf": 6980.32},
+        {"id": "LPA", "name": "Lapa", "y_dxf": 6700.32},
+        {"id": "ABR", "name": "Água Branca", "y_dxf": 6420.32},
+        {"id": "LUZ_L7", "name": "Luz (L7)", "y_dxf": 6180.32}
+    ]
+};
+
+// Unified Line 710 simply combines both
+stations["Line 710"] = [...stations["Line 7"], ...stations["Line 10"]];
+
+// Sort stations by Y dxf coordinate descending (so Jundiaí is top, Rio Grande da Serra is bottom)
+stations["Line 710"].sort((a, b) => b.y_dxf - a.y_dxf);
+
+// Y scaling: maps DXF Y coordinate to SVG Y pixel coordinate
+function dxfYToSvg(y, lineType) {
+    const lineStations = stations[lineType];
+    const minY = lineStations[lineStations.length - 1].y_dxf;
+    const maxY = lineStations[0].y_dxf;
+    
+    // Invert Y so high Y is at top of SVG (higher elevation in chart)
+    const pct = (y - minY) / (maxY - minY);
+    return MARGIN_TOP + (1.0 - pct) * USABLE_HEIGHT;
+}
+
+// Global Application State
+let appState = {
+    selectedLine: "Line 10",
+    trips: [],          // Working trips data
+    originalTrips: [],  // Original backup for resets
+    selectedTripId: null,
+    showRealized: false,
+    realizedTrips: [],  // Compare track data
+    dragNode: null      // Reference to node currently being dragged
+};
+
+// Fallback schedule data in case file fetch fails (Offline support)
+const fallbackSchedule = [
+    {
+        "trip_id": "TRIP_BFU-RGS_0500",
+        "direction": "BFU-RGS",
+        "start_time": "05:00:00",
+        "end_time": "05:55:00",
+        "stops": [
+            {"station": "BFU", "time": "05:00:00", "x_coord": 6000.0, "y_coord": 5860.32},
+            {"station": "LUZ", "time": "05:08:00", "x_coord": 6160.0, "y_coord": 5380.32},
+            {"station": "BAS", "time": "05:12:00", "x_coord": 6240.0, "y_coord": 4980.32},
+            {"station": "SCS", "time": "05:25:00", "x_coord": 6500.0, "y_coord": 3860.32},
+            {"station": "SAN", "time": "05:35:00", "x_coord": 6700.0, "y_coord": 2980.32},
+            {"station": "MAU", "time": "05:43:00", "x_coord": 6860.0, "y_coord": 2100.32},
+            {"station": "RGS", "time": "05:55:00", "x_coord": 7100.0, "y_coord": 500.32}
+        ]
+    },
+    {
+        "trip_id": "TRIP_RGS-BFU_0515",
+        "direction": "RGS-BFU",
+        "start_time": "05:15:00",
+        "end_time": "06:10:00",
+        "stops": [
+            {"station": "RGS", "time": "05:15:00", "x_coord": 6300.0, "y_coord": 500.32},
+            {"station": "MAU", "time": "05:27:00", "x_coord": 6540.0, "y_coord": 2100.32},
+            {"station": "SAN", "time": "05:35:00", "x_coord": 6700.0, "y_coord": 2980.32},
+            {"station": "SCS", "time": "05:45:00", "x_coord": 6900.0, "y_coord": 3860.32},
+            {"station": "BAS", "time": "05:58:00", "x_coord": 7160.0, "y_coord": 4980.32},
+            {"station": "LUZ", "time": "06:02:00", "x_coord": 7240.0, "y_coord": 5380.32},
+            {"station": "BFU", "time": "06:10:00", "x_coord": 7400.0, "y_coord": 5860.32}
+        ]
+    }
+];
+
+// Predefined mock realized (actual) data for comparison
+const mockRealizedData = [
+    {
+        "trip_id": "TRIP_BFU-RGS_0500",
+        "direction": "BFU-RGS",
+        "stops": [
+            {"station": "BFU", "time": "05:03:00", "y_coord": 5860.32},
+            {"station": "LUZ", "time": "05:12:00", "y_coord": 5380.32},
+            {"station": "BAS", "time": "05:17:00", "y_coord": 4980.32},
+            {"station": "SCS", "time": "05:32:00", "y_coord": 3860.32},
+            {"station": "SAN", "time": "05:44:00", "y_coord": 2980.32},
+            {"station": "MAU", "time": "05:53:00", "y_coord": 2100.32},
+            {"station": "RGS", "time": "06:04:00", "y_coord": 500.32}
+        ]
+    }
+];
+
+// ==========================================================================
+// Initialization & Loading Logic
+// ==========================================================================
+window.onload = function() {
+    loadDefaultSchedule();
+};
+
+function loadDefaultSchedule() {
+    // Attempt to fetch schedule.json relative to the page location
+    fetch("../data/schedule.json")
+        .then(response => {
+            if (!response.ok) throw new Error("File not found");
+            return response.json();
+        })
+        .then(data => {
+            initSchedule(data);
+        })
+        .catch(err => {
+            console.warn("Could not load schedule.json via fetch (normal for local file:// opening). Using fallback mock schedule.", err);
+            initSchedule(fallbackSchedule);
+        });
+}
+
+function initSchedule(data) {
+    appState.trips = JSON.parse(JSON.stringify(data)); // Deep clone
+    appState.originalTrips = JSON.parse(JSON.stringify(data));
+    
+    renderApp();
+}
+
+function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            initSchedule(data);
+        } catch (err) {
+            alert("Erro ao ler JSON: Formato inválido.");
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ==========================================================================
+// Render Application
+// ==========================================================================
+function renderApp() {
+    renderTrainList();
+    renderChart();
+}
+
+function renderTrainList() {
+    const listElement = document.getElementById("train-list");
+    listElement.innerHTML = "";
+    
+    const lineTrips = getFilteredTrips();
+    document.getElementById("train-count").textContent = `${lineTrips.length} Trens`;
+    
+    lineTrips.forEach(trip => {
+        const li = document.createElement("li");
+        li.className = `train-item ${appState.selectedTripId === trip.trip_id ? 'selected' : ''}`;
+        li.onclick = () => selectTrip(trip.trip_id);
+        
+        const startStation = trip.stops[0].station;
+        const endStation = trip.stops[trip.stops.length - 1].station;
+        
+        li.innerHTML = `
+            <div class="train-info">
+                <span class="train-code-label">${trip.trip_id.split('_').slice(-2).join(' ')}</span>
+                <span class="train-route-label">${startStation} ➔ ${endStation} (${trip.direction})</span>
+            </div>
+            <span class="train-time-label">${trip.start_time.substring(0, 5)}</span>
+        `;
+        listElement.appendChild(li);
+    });
+}
+
+function getFilteredTrips() {
+    return appState.trips.filter(trip => {
+        // If unified line 710, show all trips
+        if (appState.selectedLine === "Line 710") return true;
+        
+        // Otherwise filter by direction/stops matching line stations
+        const lineStations = stations[appState.selectedLine].map(s => s.id);
+        const hasStart = lineStations.includes(trip.stops[0].station);
+        const hasEnd = lineStations.includes(trip.stops[trip.stops.length - 1].station);
+        return hasStart && hasEnd;
+    });
+}
+
+function switchLine(lineType) {
+    appState.selectedLine = lineType;
+    appState.selectedTripId = null;
+    
+    // Toggle active tab class
+    document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+    if (lineType === "Line 10") document.getElementById("btn-l10").classList.add("active");
+    if (lineType === "Line 7") document.getElementById("btn-l7").classList.add("active");
+    if (lineType === "Line 710") document.getElementById("btn-l710").classList.add("active");
+    
+    renderApp();
+}
+
+function selectTrip(tripId) {
+    appState.selectedTripId = appState.selectedTripId === tripId ? null : tripId;
+    renderApp();
+    
+    // Scroll chart horizontally to show selected train
+    if (appState.selectedTripId) {
+        const trip = appState.trips.find(t => t.trip_id === tripId);
+        if (trip) {
+            const startX = timeToX(trip.start_time);
+            const container = document.getElementById("chart-container");
+            container.scrollTo({
+                left: startX - container.clientWidth / 2,
+                behavior: 'smooth'
+            });
+        }
+    }
+}
+
+// ==========================================================================
+// Chart Rendering (SVG Generation)
+// ==========================================================================
+function renderChart() {
+    const container = document.getElementById("chart-container");
+    container.innerHTML = ""; // Clear
+    
+    // Create SVG element
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("width", CHART_WIDTH);
+    svg.setAttribute("height", CHART_HEIGHT);
+    svg.setAttribute("id", "train-chart-svg");
+    
+    // Attach general mouse up/move listener to SVG for dragging
+    svg.addEventListener("mousemove", onNodeDrag);
+    svg.addEventListener("mouseup", onNodeDragEnd);
+    svg.addEventListener("mouseleave", onNodeDragEnd);
+    
+    drawGrid(svg);
+    drawTrainPaths(svg);
+    
+    container.appendChild(svg);
+}
+
+function drawGrid(svg) {
+    const lineStations = stations[appState.selectedLine];
+    
+    // 1. Draw station horizontal lines
+    lineStations.forEach(station => {
+        const y = dxfYToSvg(station.y_dxf, appState.selectedLine);
+        
+        // Horizontal line
+        const line = document.createElementNS(SVG_NS, "line");
+        line.setAttribute("x1", MARGIN_LEFT);
+        line.setAttribute("y1", y);
+        line.setAttribute("x2", CHART_WIDTH - MARGIN_RIGHT);
+        line.setAttribute("y2", y);
+        line.className.baseVal = "station-grid-line";
+        svg.appendChild(line);
+        
+        // Station name label (fixed on left)
+        const label = document.createElementNS(SVG_NS, "text");
+        label.setAttribute("x", MARGIN_LEFT - 15);
+        label.setAttribute("y", y + 4);
+        label.setAttribute("text-anchor", "end");
+        label.className.baseVal = "station-label";
+        label.textContent = station.name;
+        svg.appendChild(label);
+    });
+    
+    // 2. Draw vertical time grid lines (every hour and every 10 minutes)
+    for (let h = START_HOUR; h <= END_HOUR; h++) {
+        // Draw Hour major line
+        const hourTimeStr = `${String(h).padStart(2, '0')}:00:00`;
+        const x = timeToX(hourTimeStr);
+        
+        const line = document.createElementNS(SVG_NS, "line");
+        line.setAttribute("x1", x);
+        line.setAttribute("y1", MARGIN_TOP);
+        line.setAttribute("x2", x);
+        line.setAttribute("y2", CHART_HEIGHT - MARGIN_BOTTOM);
+        line.className.baseVal = "grid-line-major";
+        svg.appendChild(line);
+        
+        // Hour label text at top and bottom
+        const topLabel = document.createElementNS(SVG_NS, "text");
+        topLabel.setAttribute("x", x);
+        topLabel.setAttribute("y", MARGIN_TOP - 15);
+        topLabel.setAttribute("text-anchor", "middle");
+        topLabel.className.baseVal = "time-label";
+        topLabel.textContent = `${String(h).padStart(2, '0')}:00`;
+        svg.appendChild(topLabel);
+        
+        const bottomLabel = document.createElementNS(SVG_NS, "text");
+        bottomLabel.setAttribute("x", x);
+        bottomLabel.setAttribute("y", CHART_HEIGHT - MARGIN_BOTTOM + 25);
+        bottomLabel.setAttribute("text-anchor", "middle");
+        bottomLabel.className.baseVal = "time-label";
+        bottomLabel.textContent = `${String(h).padStart(2, '0')}:00`;
+        svg.appendChild(bottomLabel);
+        
+        // Draw minute minor lines (every 10 minutes)
+        if (h < END_HOUR) {
+            for (let m = 10; m < 60; m += 10) {
+                const minTimeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+                const xm = timeToX(minTimeStr);
+                
+                const minLine = document.createElementNS(SVG_NS, "line");
+                minLine.setAttribute("x1", xm);
+                minLine.setAttribute("y1", MARGIN_TOP);
+                minLine.setAttribute("x2", xm);
+                minLine.setAttribute("y2", CHART_HEIGHT - MARGIN_BOTTOM);
+                minLine.className.baseVal = "grid-line-minor";
+                svg.appendChild(minLine);
+            }
+        }
+    }
+}
+
+function drawTrainPaths(svg) {
+    const lineTrips = getFilteredTrips();
+    
+    // Draw planned train paths
+    lineTrips.forEach(trip => {
+        const isSelected = appState.selectedTripId === trip.trip_id;
+        
+        // Compute path string
+        let points = trip.stops.map(stop => {
+            const px = timeToX(stop.time);
+            const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
+            return `${px},${py}`;
+        }).join(" ");
+        
+        const polyline = document.createElementNS(SVG_NS, "polyline");
+        polyline.setAttribute("points", points);
+        polyline.setAttribute("id", `line-${trip.trip_id}`);
+        polyline.className.baseVal = `train-path-planned ${isSelected ? 'highlighted' : ''}`;
+        
+        // Show tooltip on hover
+        polyline.addEventListener("mouseover", (e) => showTripTooltip(e, trip));
+        polyline.addEventListener("mouseout", hideTooltip);
+        polyline.addEventListener("click", () => selectTrip(trip.trip_id));
+        
+        svg.appendChild(polyline);
+        
+        // If selected, draw interactive handles/circles
+        if (isSelected) {
+            trip.stops.forEach((stop, stopIdx) => {
+                const px = timeToX(stop.time);
+                const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
+                
+                const circle = document.createElementNS(SVG_NS, "circle");
+                circle.setAttribute("cx", px);
+                circle.setAttribute("cy", py);
+                circle.setAttribute("r", 5);
+                circle.className.baseVal = "time-node";
+                
+                // Add drag events
+                circle.addEventListener("mousedown", (e) => onNodeDragStart(e, trip.trip_id, stopIdx));
+                circle.addEventListener("mouseover", (e) => showNodeTooltip(e, stop, trip));
+                circle.addEventListener("mouseout", hideTooltip);
+                
+                svg.appendChild(circle);
+            });
+        }
+    });
+    
+    // Draw realized actual paths (if toggled)
+    if (appState.showRealized) {
+        mockRealizedData.forEach(actualTrip => {
+            // Find corresponding planned trip to map coords
+            const planned = appState.trips.find(t => t.trip_id === actualTrip.trip_id);
+            if (!planned) return;
+            
+            let points = actualTrip.stops.map(stop => {
+                const px = timeToX(stop.time);
+                const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
+                return `${px},${py}`;
+            }).join(" ");
+            
+            const polyline = document.createElementNS(SVG_NS, "polyline");
+            polyline.setAttribute("points", points);
+            polyline.className.baseVal = "train-path-actual";
+            svg.appendChild(polyline);
+        });
+    }
+}
+
+// ==========================================================================
+// Interactive Drag & Drop + Downstream Time Propagation
+// ==========================================================================
+function onNodeDragStart(e, tripId, stopIdx) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const trip = appState.trips.find(t => t.trip_id === tripId);
+    if (!trip) return;
+    
+    appState.dragNode = {
+        tripId: tripId,
+        stopIdx: stopIdx,
+        originalX: timeToX(trip.stops[stopIdx].time),
+        originalTimeMinutes: timeStrToMinutes(trip.stops[stopIdx].time),
+        element: e.target
+    };
+    
+    e.target.classList.add("dragging");
+}
+
+function onNodeDrag(e) {
+    if (!appState.dragNode) return;
+    
+    const svg = document.getElementById("train-chart-svg");
+    const rect = svg.getBoundingClientRect();
+    
+    // Find relative mouse position on SVG
+    const clientX = e.clientX - rect.left;
+    
+    // Bound movement within grid area
+    const newX = Math.max(MARGIN_LEFT, Math.min(CHART_WIDTH - MARGIN_RIGHT, clientX));
+    
+    // Calculate time differences
+    const newTimeStr = xToTime(newX);
+    const newTimeMinutes = timeStrToMinutes(newTimeStr);
+    const deltaMinutes = newTimeMinutes - appState.dragNode.originalTimeMinutes;
+    
+    const trip = appState.trips.find(t => t.trip_id === appState.dragNode.tripId);
+    const stopIdx = appState.dragNode.stopIdx;
+    
+    // Update current stop time
+    trip.stops[stopIdx].time = newTimeStr;
+    trip.stops[stopIdx].x_coord = newX;
+    
+    // Propagate time delta (+D minutes) to all downstream stops
+    for (let i = stopIdx + 1; i < trip.stops.length; i++) {
+        // Load original stops reference
+        const originalTrip = appState.originalTrips.find(t => t.trip_id === appState.dragNode.tripId);
+        const originalTime = timeStrToMinutes(originalTrip.stops[i].time);
+        
+        // Propagate forward
+        const updatedTimeMinutes = originalTime + deltaMinutes;
+        const updatedTimeStr = minutesToTimeStr(updatedTimeMinutes);
+        
+        trip.stops[i].time = updatedTimeStr;
+        trip.stops[i].x_coord = timeToX(updatedTimeStr);
+    }
+    
+    // Recalculate trip start/end time
+    trip.start_time = trip.stops[0].time;
+    trip.end_time = trip.stops[trip.stops.length - 1].time;
+    
+    // Redraw SVG in-place for performance
+    updateSvgVisuals(trip);
+    
+    // Update tooltip
+    updateTooltipPosition(e.clientX, e.clientY, `
+        <strong>Trem:</strong> ${trip.trip_id.split('_').slice(-2).join(' ')}<br>
+        <strong>Estação:</strong> ${trip.stops[stopIdx].station}<br>
+        <strong>Novo Horário:</strong> ${newTimeStr.substring(0, 5)} (${deltaMinutes >= 0 ? '+' : ''}${Math.round(deltaMinutes)} min)
+    `);
+}
+
+function onNodeDragEnd(e) {
+    if (!appState.dragNode) return;
+    
+    appState.dragNode.element.classList.remove("dragging");
+    appState.dragNode = null;
+    hideTooltip();
+    
+    // Rerender side list to reflect new times
+    renderTrainList();
+}
+
+function updateSvgVisuals(trip) {
+    // Redraw polyline points
+    const pointsStr = trip.stops.map(stop => {
+        const px = timeToX(stop.time);
+        const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
+        return `${px},${py}`;
+    }).join(" ");
+    
+    const polyline = document.getElementById(`line-${trip.trip_id}`);
+    if (polyline) polyline.setAttribute("points", pointsStr);
+    
+    // Update node positions (circles)
+    const svg = document.getElementById("train-chart-svg");
+    const circles = svg.getElementsByTagName("circle");
+    
+    trip.stops.forEach((stop, stopIdx) => {
+        const px = timeToX(stop.time);
+        if (circles[stopIdx]) {
+            circles[stopIdx].setAttribute("cx", px);
+        }
+    });
+}
+
+// ==========================================================================
+// Tooltip & Helper Logic
+// ==========================================================================
+function showTripTooltip(e, trip) {
+    const text = `
+        <strong>Trem:</strong> ${trip.trip_id.split('_').slice(-2).join(' ')}<br>
+        <strong>Partida:</strong> ${trip.start_time.substring(0, 5)} (${trip.stops[0].station})<br>
+        <strong>Chegada:</strong> ${trip.end_time.substring(0, 5)} (${trip.stops[trip.stops.length-1].station})
+    `;
+    updateTooltipPosition(e.clientX, e.clientY, text);
+}
+
+function showNodeTooltip(e, stop, trip) {
+    const text = `
+        <strong>Trem:</strong> ${trip.trip_id.split('_').slice(-2).join(' ')}<br>
+        <strong>Estação:</strong> ${stop.station}<br>
+        <strong>Horário:</strong> ${stop.time.substring(0, 5)}
+    `;
+    updateTooltipPosition(e.clientX, e.clientY, text);
+}
+
+function updateTooltipPosition(clientX, clientY, innerHTML) {
+    const tooltip = document.getElementById("tooltip");
+    tooltip.innerHTML = innerHTML;
+    tooltip.classList.remove("hidden");
+    
+    tooltip.style.left = `${clientX + 15}px`;
+    tooltip.style.top = `${clientY + 15}px`;
+}
+
+function hideTooltip() {
+    document.getElementById("tooltip").classList.add("hidden");
+}
+
+// ==========================================================================
+// Sidebar Controllers (Search, Toggle Realized, Reset, Export)
+// ==========================================================================
+function filterTrains() {
+    const query = document.getElementById("search-train").value.toLowerCase();
+    const items = document.querySelectorAll(".train-item");
+    
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        if (text.includes(query)) {
+            item.style.display = "flex";
+        } else {
+            item.style.display = "none";
+        }
+    });
+}
+
+function loadMockRealizedData() {
+    appState.showRealized = !appState.showRealized;
+    
+    const btn = document.getElementById("btn-mock-real");
+    if (appState.showRealized) {
+        btn.textContent = "📈 Ocultar Realizado";
+        btn.classList.add("btn-primary");
+    } else {
+        btn.textContent = "📈 Mostrar Realizado";
+        btn.classList.remove("btn-primary");
+    }
+    
+    renderChart();
+}
+
+function resetToOriginal() {
+    if (confirm("Deseja reverter todas as alterações e carregar a grade original?")) {
+        appState.trips = JSON.parse(JSON.stringify(appState.originalTrips));
+        renderApp();
+    }
+}
+
+function exportData() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState.trips, null, 2));
+    const dlAnchorElem = document.createElement('a');
+    dlAnchorElem.setAttribute("href", dataStr);
+    dlAnchorElem.setAttribute("download", `grade_ferroviaria_L10.json`);
+    dlAnchorElem.click();
+}

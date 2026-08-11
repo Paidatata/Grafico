@@ -1,0 +1,522 @@
+/* ==========================================================================
+   Design System & Variable Definitions
+   ========================================================================== */
+:root {
+    --bg-primary: #0a0f1d;
+    --bg-secondary: #111827;
+    --panel-bg: rgba(17, 24, 39, 0.75);
+    --panel-border: rgba(255, 255, 255, 0.06);
+    
+    --text-primary: #f3f4f6;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    
+    --accent-planned: #00f0ff;    /* Neon Cyan */
+    --accent-actual: #ff3b30;     /* Vivid Red */
+    --accent-highlight: #ffcc00;  /* Yellow */
+    --accent-interactive: #10b981;/* Emerald Green */
+    
+    --grid-major: rgba(255, 255, 255, 0.15);
+    --grid-minor: rgba(255, 255, 255, 0.04);
+    --station-line: rgba(255, 255, 255, 0.08);
+    
+    --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ==========================================================================
+   Base Elements & Reset
+   ========================================================================== */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* ==========================================================================
+   Layout Containers
+   ========================================================================== */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 16px;
+    gap: 16px;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background-color: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo-icon {
+    font-size: 32px;
+}
+
+.title-group h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #ffffff 30%, var(--accent-planned));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+/* ==========================================================================
+   Main Content Layout
+   ========================================================================== */
+.main-content {
+    display: flex;
+    flex: 1;
+    gap: 16px;
+    min-height: 0; /* Important for flex child scrolling */
+}
+
+.glass-panel {
+    background-color: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ==========================================================================
+   Sidebar / Train list
+   ========================================================================== */
+.sidebar {
+    width: 320px;
+    flex-shrink: 0;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.panel-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--panel-border);
+    color: var(--accent-planned);
+}
+
+.search-box {
+    margin: 0 20px 12px 20px;
+    position: relative;
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+}
+
+.search-box input {
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px 10px 38px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-box input:focus {
+    border-color: var(--accent-planned);
+}
+
+.toggle-buttons {
+    display: flex;
+    gap: 8px;
+    margin: 0 20px 16px 20px;
+}
+
+.train-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px 20px 12px;
+}
+
+.train-list {
+    list-style: none;
+}
+
+.train-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    border: 1px solid transparent;
+    margin-bottom: 6px;
+}
+
+.train-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.train-item.selected {
+    background-color: rgba(0, 240, 255, 0.08);
+    border-color: rgba(0, 240, 255, 0.2);
+}
+
+.train-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.train-code-label {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.train-route-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.train-time-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--accent-planned);
+}
+
+/* ==========================================================================
+   Graphic Display Area & Scroll Container
+   ========================================================================== */
+.graphic-area {
+    flex: 1;
+    min-width: 0;
+}
+
+.legend {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.line-style {
+    display: inline-block;
+    width: 20px;
+    height: 3px;
+}
+
+.planned-dash {
+    border-top: 3px dashed var(--accent-planned);
+}
+
+.actual-solid {
+    border-top: 3px solid var(--accent-actual);
+}
+
+.node-style {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--accent-interactive);
+}
+
+.chart-scroll-container {
+    flex: 1;
+    overflow: auto;
+    background-color: #05070c;
+    border-radius: 0 0 16px 16px;
+    position: relative;
+}
+
+/* ==========================================================================
+   SVG Styling Rules
+   ========================================================================== */
+svg {
+    display: block;
+    user-select: none;
+}
+
+/* Grid & Axes */
+.grid-line-minor {
+    stroke: var(--grid-minor);
+    stroke-width: 1;
+    stroke-dasharray: 2, 2;
+}
+
+.grid-line-major {
+    stroke: var(--grid-major);
+    stroke-width: 1;
+}
+
+.station-grid-line {
+    stroke: var(--station-line);
+    stroke-width: 1.5;
+}
+
+.station-label {
+    fill: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.time-label {
+    fill: var(--text-secondary);
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+
+.axis-line {
+    stroke: var(--panel-border);
+    stroke-width: 2;
+}
+
+/* Train Lines */
+.train-path-planned {
+    fill: none;
+    stroke: var(--accent-planned);
+    stroke-width: 2;
+    stroke-dasharray: 6, 4;
+    transition: stroke-width 0.2s, stroke 0.2s;
+    cursor: pointer;
+}
+
+.train-path-planned:hover {
+    stroke-width: 4;
+    stroke: #ffffff;
+}
+
+.train-path-planned.highlighted {
+    stroke-width: 4.5;
+    stroke: #ffffff;
+}
+
+.train-path-actual {
+    fill: none;
+    stroke: var(--accent-actual);
+    stroke-width: 2.5;
+    pointer-events: none;
+}
+
+/* Draggable Nodes */
+.time-node {
+    fill: var(--accent-interactive);
+    stroke: rgba(16, 185, 129, 0.4);
+    stroke-width: 6;
+    cursor: ew-resize;
+    transition: r 0.2s, fill 0.2s, stroke-width 0.2s;
+}
+
+.time-node:hover {
+    fill: var(--accent-highlight);
+    stroke: rgba(255, 204, 0, 0.4);
+    stroke-width: 10;
+    r: 7;
+}
+
+.time-node.dragging {
+    fill: var(--accent-highlight);
+    stroke: rgba(255, 204, 0, 0.6);
+    stroke-width: 14;
+    r: 8;
+}
+
+/* ==========================================================================
+   UI Components (Buttons, Tabs, Inputs)
+   ========================================================================== */
+.btn {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-primary {
+    background-color: var(--accent-interactive);
+    color: #ffffff;
+}
+
+.btn-primary:hover {
+    background-color: #059669;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+}
+
+.btn-secondary {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: var(--panel-border);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 11px;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.tab-btn.active {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+}
+
+.file-upload-wrapper {
+    position: relative;
+}
+
+.file-upload-wrapper input[type="file"] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+.upload-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--panel-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.upload-label:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ==========================================================================
+   Tooltip Element
+   ========================================================================== */
+.tooltip {
+    position: fixed;
+    background-color: rgba(17, 24, 39, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    transition: opacity 0.15s;
+    line-height: 1.5;
+}
+
+.tooltip.hidden {
+    display: none;
+    opacity: 0;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
