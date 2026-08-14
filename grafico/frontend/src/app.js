@@ -891,6 +891,11 @@ const AUTO_SCROLL_TICK_MS = 15000;
 const AUTO_SCROLL_RESUME_IDLE_MS = 30000;
 const AUTO_SCROLL_RESUME_CHECK_MS = 1000;
 
+// Incremented on every centerChartOnTime() call; lets each call's cleanup
+// recognize whether it's still the most recent call before clearing
+// isProgrammaticScroll (see centerChartOnTime).
+let centerChartCallId = 0;
+
 // Scrolls the chart so timeStr's X position lands at the horizontal center of
 // the visible viewport. Shared by "select a train" and the auto-scroll clock,
 // so both always land through the same math.
@@ -901,6 +906,15 @@ function centerChartOnTime(timeStr, { smooth = true } = {}) {
     const x = timeToX(timeStr);
     const targetLeft = Math.max(0, x - container.clientWidth / 2);
 
+    // Tag this call so its cleanup only clears the flag if no later call has
+    // superseded it (see clearFlag below) — two centerChartOnTime calls can
+    // legitimately overlap (e.g. an autoScrollTick firing while a selectTrip
+    // scroll is still settling), and without this guard the earlier call's
+    // fallback timeout could clear isProgrammaticScroll out from under the
+    // later call's still-in-flight scroll, briefly exposing its native scroll
+    // events to onChartScroll as if they were user interaction.
+    const callId = ++centerChartCallId;
+
     appState.isProgrammaticScroll = true;
     container.scrollTo({ left: targetLeft, behavior: smooth ? "smooth" : "auto" });
 
@@ -908,7 +922,10 @@ function centerChartOnTime(timeStr, { smooth = true } = {}) {
     // it the flag would clear after the animation's first frame and every
     // remaining frame's scroll event would be misread as user interaction,
     // permanently pausing the auto-scroll clock.
-    const clearFlag = () => { appState.isProgrammaticScroll = false; };
+    const clearFlag = () => {
+        if (callId !== centerChartCallId) return; // a newer call is still in flight
+        appState.isProgrammaticScroll = false;
+    };
     container.addEventListener("scrollend", clearFlag, { once: true });
     // Fallback for browsers without scrollend: this container's smooth
     // scrolls never take anywhere near this long to settle.
