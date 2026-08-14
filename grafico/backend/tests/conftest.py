@@ -32,3 +32,12 @@ def db_session():
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture()
+def app_client():
+    from fastapi.testclient import TestClient
+    from src.app import app
+
+    with TestClient(app) as client:
+        yield client
