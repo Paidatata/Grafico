@@ -190,7 +190,15 @@ let appState = {
     dragNode: null,     // Reference to node currently being dragged
     editLookbackMinutes: 15,  // Sane default before the server value loads
     // Set when a live update arrives mid-drag; drained once the gesture commits.
-    pendingRerender: false
+    pendingRerender: false,
+    // True while a centerChartOnTime() scrollTo is in flight, so the scroll
+    // events it generates aren't mistaken for user interaction.
+    isProgrammaticScroll: false,
+    // True while auto-scroll is paused because the operator is interacting
+    // with the chart (dragging a node, or scrolling it manually); resumes
+    // automatically AUTO_SCROLL_RESUME_IDLE_MS after the last interaction.
+    autoScrollPaused: false,
+    lastInteractionAt: 0
 };
 
 // Predefined mock realized (actual) data for comparison
@@ -228,6 +236,7 @@ function loadDefaultSchedule() {
             initSchedule(data.trips);
             connectLiveUpdates();
             loadLookbackSetting();
+            startAutoScrollClock();
         })
         .catch(err => {
             console.error("Could not reach the schedule server.", err);
@@ -426,17 +435,15 @@ function switchLine(lineType) {
 function selectTrip(tripId) {
     appState.selectedTripId = appState.selectedTripId === tripId ? null : tripId;
     renderApp();
-    
-    // Scroll chart horizontally to show selected train
+
+    // Scroll chart horizontally to show selected train. Deliberately does NOT
+    // call markUserInteraction() — selecting a trip from the list is a
+    // separate, pre-existing behavior from the two auto-scroll pause
+    // triggers (node drag, manual chart scroll) and must not pause the clock.
     if (appState.selectedTripId) {
         const trip = appState.trips.find(t => t.trip_id === tripId);
         if (trip) {
-            const startX = timeToX(trip.start_time);
-            const container = document.getElementById("chart-container");
-            container.scrollTo({
-                left: startX - container.clientWidth / 2,
-                behavior: 'smooth'
-            });
+            centerChartOnTime(trip.start_time);
         }
     }
 }
@@ -627,7 +634,9 @@ function drawTrainPaths(svg) {
 function onNodeDragStart(e, tripId, stopIdx) {
     e.preventDefault();
     e.stopPropagation();
-    
+
+    markUserInteraction();
+
     const trip = appState.trips.find(t => t.trip_id === tripId);
     if (!trip) return;
     
@@ -825,6 +834,10 @@ function scheduleTrainListRefresh() {
 }
 
 function onChartScroll() {
+    if (!appState.isProgrammaticScroll) {
+        markUserInteraction();
+    }
+    updateNowLineLabel();
     scheduleTrainListRefresh();
 }
 
@@ -869,4 +882,65 @@ function exportData() {
     dlAnchorElem.setAttribute("href", dataStr);
     dlAnchorElem.setAttribute("download", `grade_ferroviaria_L10.json`);
     dlAnchorElem.click();
+}
+
+// ==========================================================================
+// Auto-Scroll Clock ("now" line stays centered; the chart moves beneath it)
+// ==========================================================================
+const AUTO_SCROLL_TICK_MS = 15000;
+const AUTO_SCROLL_RESUME_IDLE_MS = 30000;
+const AUTO_SCROLL_RESUME_CHECK_MS = 1000;
+
+// Scrolls the chart so timeStr's X position lands at the horizontal center of
+// the visible viewport. Shared by "select a train" and the auto-scroll clock,
+// so both always land through the same math.
+function centerChartOnTime(timeStr, { smooth = true } = {}) {
+    const container = document.getElementById("chart-container");
+    if (!container) return;
+
+    const x = timeToX(timeStr);
+    const targetLeft = Math.max(0, x - container.clientWidth / 2);
+
+    appState.isProgrammaticScroll = true;
+    container.scrollTo({ left: targetLeft, behavior: smooth ? "smooth" : "auto" });
+
+    // scrollend fires once a smooth-scroll animation actually settles; without
+    // it the flag would clear after the animation's first frame and every
+    // remaining frame's scroll event would be misread as user interaction,
+    // permanently pausing the auto-scroll clock.
+    const clearFlag = () => { appState.isProgrammaticScroll = false; };
+    container.addEventListener("scrollend", clearFlag, { once: true });
+    // Fallback for browsers without scrollend: this container's smooth
+    // scrolls never take anywhere near this long to settle.
+    setTimeout(clearFlag, 1000);
+}
+
+function markUserInteraction() {
+    appState.lastInteractionAt = Date.now();
+    appState.autoScrollPaused = true;
+}
+
+function updateNowLineLabel() {
+    const label = document.getElementById("now-line-label");
+    if (label) label.textContent = getReferenceTime().substring(0, 5);
+}
+
+function autoScrollTick() {
+    if (!appState.autoScrollPaused) {
+        centerChartOnTime(currentClockTimeStr(), { smooth: true });
+    }
+}
+
+function autoScrollResumeCheck() {
+    if (!appState.autoScrollPaused) return;
+    if (Date.now() - appState.lastInteractionAt >= AUTO_SCROLL_RESUME_IDLE_MS) {
+        appState.autoScrollPaused = false;
+    }
+}
+
+function startAutoScrollClock() {
+    centerChartOnTime(currentClockTimeStr(), { smooth: false });
+    updateNowLineLabel();
+    setInterval(autoScrollTick, AUTO_SCROLL_TICK_MS);
+    setInterval(autoScrollResumeCheck, AUTO_SCROLL_RESUME_CHECK_MS);
 }

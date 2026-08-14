@@ -77,3 +77,11 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 3. Confirme que cada lista mostra só os trens cuja viagem (partida até chegada) inclui o horário atual — não as 251 viagens do dia inteiro.
 4. Role o gráfico manualmente para um horário bem diferente do atual (ex: de manhã cedo). Confirme que as duas listas se atualizam para mostrar os trens circulando naquele horário rolado, não mais no horário atual.
 5. Digite um código na busca da lista esquerda (ex: "P15") e confirme que só a lista esquerda é filtrada — a direita continua mostrando todos os trens em trânsito dela.
+
+## Cenário 10: Linha do "Agora" e Auto-Scroll
+
+1. Abra a aplicação. Confirme que a linha vertical amarela aparece centralizada na área do gráfico, com um rótulo mostrando o horário atual.
+2. Sem tocar em nada, espere ~15 segundos. Confirme que o gráfico rola sozinho para a esquerda por baixo da linha (que continua no centro) e o rótulo da linha avança.
+3. Role o gráfico manualmente (roda do mouse ou barra de rolagem) para um horário diferente. Confirme que a linha continua fixa no centro da tela, mas o rótulo agora mostra o horário para onde você rolou — não o horário real.
+4. Pare de interagir e espere 30 segundos. Confirme que o gráfico volta a rolar sozinho até o horário real aparecer centralizado outra vez.
+5. Arraste um nó de horário (edição normal) e confirme que, depois de soltar, o auto-scroll também fica pausado por 30s antes de retomar.

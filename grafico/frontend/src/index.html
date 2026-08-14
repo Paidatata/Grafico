@@ -80,9 +80,15 @@
                     </div>
                 </div>
 
-                <!-- SVG Scrollable Container -->
-                <div class="chart-scroll-container" id="chart-container">
-                    <!-- The SVG will be generated here dynamically -->
+                <!-- Viewport wrapper: hosts the scrollable chart plus the fixed-position "now" line overlay -->
+                <div class="chart-viewport" id="chart-viewport">
+                    <div class="chart-scroll-container" id="chart-container">
+                        <!-- The SVG will be generated here dynamically -->
+                    </div>
+                    <div class="now-line-overlay" id="now-line-overlay">
+                        <div class="now-line"></div>
+                        <div class="now-line-label" id="now-line-label">--:--</div>
+                    </div>
                 </div>
             </section>
 
