@@ -566,10 +566,16 @@ function drawTrainPaths(svg) {
         polyline.setAttribute("points", points);
         polyline.setAttribute("id", `line-${trip.trip_id}`);
         polyline.className.baseVal = `train-path-planned ${isSelected ? 'highlighted' : ''}`;
-        
+
         // Show tooltip on hover
-        polyline.addEventListener("mouseover", (e) => showTripTooltip(e, trip));
-        polyline.addEventListener("mouseout", hideTooltip);
+        polyline.addEventListener("mouseover", (e) => {
+            showTripTooltip(e, trip);
+            showHoverNodeLabels(trip);
+        });
+        polyline.addEventListener("mouseout", () => {
+            hideTooltip();
+            clearHoverNodeLabels();
+        });
         polyline.addEventListener("click", () => selectTrip(trip.trip_id));
         
         svg.appendChild(polyline);
@@ -755,7 +761,7 @@ function updateSvgVisuals(trip) {
         const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
         return `${px},${py}`;
     }).join(" ");
-    
+
     const polyline = document.getElementById(`line-${trip.trip_id}`);
     if (polyline) polyline.setAttribute("points", pointsStr);
 
@@ -768,6 +774,49 @@ function updateSvgVisuals(trip) {
             circle.setAttribute("cx", px);
         }
     });
+}
+
+function showHoverNodeLabels(trip) {
+    const svg = document.getElementById("train-chart-svg");
+    if (!svg) return;
+
+    let group = document.getElementById("hover-node-labels");
+    if (!group) {
+        group = document.createElementNS(SVG_NS, "g");
+        group.setAttribute("id", "hover-node-labels");
+        svg.appendChild(group);
+    }
+    group.innerHTML = "";
+
+    trip.stops.forEach(stop => {
+        const px = timeToX(stop.time);
+        const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
+        const labelText = `${trip.train_code} ${stop.time.substring(0, 5)}`;
+
+        const text = document.createElementNS(SVG_NS, "text");
+        text.setAttribute("x", px + 12);
+        text.setAttribute("y", py - 8);
+        text.className.baseVal = "hover-node-label";
+        text.textContent = labelText;
+        group.appendChild(text);
+
+        // Measured after the text node is attached, so the background rect
+        // fits the actual rendered width instead of a guessed character width.
+        const bbox = text.getBBox();
+        const bg = document.createElementNS(SVG_NS, "rect");
+        bg.setAttribute("x", bbox.x - 4);
+        bg.setAttribute("y", bbox.y - 2);
+        bg.setAttribute("width", bbox.width + 8);
+        bg.setAttribute("height", bbox.height + 4);
+        bg.setAttribute("rx", 3);
+        bg.className.baseVal = "hover-node-label-bg";
+        group.insertBefore(bg, text);
+    });
+}
+
+function clearHoverNodeLabels() {
+    const group = document.getElementById("hover-node-labels");
+    if (group) group.innerHTML = "";
 }
 
 // ==========================================================================

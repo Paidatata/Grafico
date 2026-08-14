@@ -430,6 +430,22 @@ svg {
     cursor: not-allowed;
 }
 
+/* Hover Node Labels (code + time shown at every stop while hovering a line) */
+.hover-node-label-bg {
+    fill: rgba(0, 0, 0, 0.75);
+    stroke: var(--accent-highlight);
+    stroke-width: 1;
+    pointer-events: none;
+}
+
+.hover-node-label {
+    fill: var(--accent-highlight);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+}
+
 /* ==========================================================================
    UI Components (Buttons, Tabs, Inputs)
    ========================================================================== */

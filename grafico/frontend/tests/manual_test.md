@@ -85,3 +85,10 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 3. Role o gráfico manualmente (roda do mouse ou barra de rolagem) para um horário diferente. Confirme que a linha continua fixa no centro da tela, mas o rótulo agora mostra o horário para onde você rolou — não o horário real.
 4. Pare de interagir e espere 30 segundos. Confirme que o gráfico volta a rolar sozinho até o horário real aparecer centralizado outra vez.
 5. Arraste um nó de horário (edição normal) e confirme que, depois de soltar, o auto-scroll também fica pausado por 30s antes de retomar.
+
+## Cenário 11: Rótulos de Nó ao Passar o Mouse
+
+1. Sem selecionar nenhum trem, passe o mouse sobre qualquer linha tracejada no gráfico.
+2. Confirme que aparece um rótulo pequeno (código do trem + horário) ao lado de cada nó/parada daquela viagem, além do tooltip que já existia perto do cursor.
+3. Tire o mouse da linha e confirme que os rótulos somem.
+4. Passe o mouse rapidamente por duas linhas diferentes em seguida; confirme que os rótulos da primeira não ficam "grudados" na tela.
