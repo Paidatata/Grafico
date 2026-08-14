@@ -105,6 +105,16 @@ def get_edit_lookback_minutes(db: Session) -> int:
     return int(setting.value) if setting else DEFAULT_LOOKBACK_MINUTES
 
 
+def set_edit_lookback_minutes(db: Session, minutes: int) -> None:
+    _set_setting(db, "edit_lookback_minutes", str(minutes))
+    db.commit()
+
+
+def get_last_reset_date(db: Session) -> str | None:
+    setting = db.query(models.Setting).filter(models.Setting.key == "last_reset_date").first()
+    return setting.value if setting else None
+
+
 def shift_stop(
     db: Session, trip_id: str, station_id: str, new_time: str, now: datetime | None = None,
 ) -> TripOut:
