@@ -61,3 +61,11 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 1. Pare o processo do backend (`uvicorn`).
 2. Recarregue a página do gráfico.
 3. Confirme que uma mensagem clara de erro de conexão aparece, em vez de silenciosamente carregar dados fictícios.
+
+## Cenário 8: Viagens que Cruzam a Meia-Noite
+
+1. Importe o `backend/data/schedule.json` real (ele tem ~10 viagens que cruzam a meia-noite, ex: `TRIP_BFU-RGS_231230`).
+2. Localize e selecione uma dessas viagens (paradas com horário próximo de `23:5x` seguidas de paradas em `00:0x`).
+3. Confirme que a linha do trem é uma polilinha contínua e crescente da esquerda para a direita — sem "voltar" para a borda esquerda do gráfico no trecho após a meia-noite.
+4. Confirme que os rótulos de hora no topo/base do gráfico, à direita de "23:00", mostram "00:00", "01:00", "02:00", "03:00" (não "24:00", "25:00"...).
+5. Arraste um nó de parada logo após a meia-noite (ex: `00:01`) e confirme que a propagação para as paradas seguintes (também após a meia-noite) funciona normalmente.

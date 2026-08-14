@@ -17,37 +17,51 @@ const USABLE_WIDTH = CHART_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 const USABLE_HEIGHT = CHART_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
 
 // Scales
-// Time starts at 04:00 (4 hours) and ends at 24:00 (24 hours). Total 20 hours.
+// The chart spans one full service day: 04:00 today through 04:00 the next day.
+// END_HOUR = 28 means "28 hours past midnight" (i.e. 04:00 the next day), not a
+// literal clock hour — it's what lets a stop at, say, 00:15 render as the tail of
+// the day instead of wrapping back to the chart's left edge. Mirrors the
+// SERVICE_DAY_START_HOUR convention in backend/src/timeutils.py.
 const START_HOUR = 4;
-const END_HOUR = 24;
+const END_HOUR = 28;
 const TOTAL_HOURS = END_HOUR - START_HOUR;
 
 // Coordinate helpers
 // Time mapping: X pixel to Minutes from midnight
 // X coordinate in DXF had scale: 1 minute = 20 units.
 // In our SVG viewport, we map X linearly between MARGIN_LEFT and CHART_WIDTH - MARGIN_RIGHT
+//
+// timeToX/xToTime work in *service-day* minutes (via timeStrToServiceMinutes below),
+// not raw clock minutes, so 00:00-03:59 stops land after 23:59 rather than before
+// 04:00. Grid-line positions use serviceOffsetMinutesToX instead (see drawGrid) —
+// they need the START_HOUR..END_HOUR boundary to stay unwrapped, which the
+// timeStrToServiceMinutes modulo would otherwise collapse onto the left edge.
 function timeToX(timeStr) {
-    const [h, m, s] = timeStr.split(":").map(Number);
-    const totalMinutes = h * 60 + m + (s / 60);
-    const minTime = START_HOUR * 60;
-    const maxTime = END_HOUR * 60;
-    
-    const pct = (totalMinutes - minTime) / (maxTime - minTime);
+    const serviceMinutes = timeStrToServiceMinutes(timeStr);
+    const pct = serviceMinutes / (TOTAL_HOURS * 60);
     return MARGIN_LEFT + pct * USABLE_WIDTH;
 }
 
 function xToTime(x) {
-    const pct = (x - MARGIN_LEFT) / USABLE_WIDTH;
-    const minTime = START_HOUR * 60;
-    const maxTime = END_HOUR * 60;
-    
-    const totalMinutes = minTime + pct * (maxTime - minTime);
-    
-    const h = Math.max(START_HOUR, Math.min(END_HOUR, Math.floor(totalMinutes / 60))) % 24;
-    const m = Math.floor(totalMinutes % 60);
-    const s = Math.floor((totalMinutes * 60) % 60);
-    
+    const pct = Math.max(0, Math.min(1, (x - MARGIN_LEFT) / USABLE_WIDTH));
+    const serviceMinutes = pct * TOTAL_HOURS * 60;
+    const rawMinutes = (serviceMinutes + START_HOUR * 60) % (24 * 60);
+
+    const h = Math.floor(rawMinutes / 60);
+    const m = Math.floor(rawMinutes % 60);
+    const s = Math.floor((rawMinutes * 60) % 60);
+
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// Unwrapped hour-offset-from-START_HOUR -> X, used only for grid-line placement.
+// h in drawGrid legitimately runs past 24 (up to END_HOUR=28) to reach the chart's
+// right edge; feeding that through timeToX's wrapping service-minutes formula would
+// hit the modulo boundary exactly at h=28 and draw the last gridline on top of the
+// first instead of at the right edge.
+function serviceOffsetMinutesToX(offsetMinutes) {
+    const pct = offsetMinutes / (TOTAL_HOURS * 60);
+    return MARGIN_LEFT + pct * USABLE_WIDTH;
 }
 
 function timeStrToMinutes(timeStr) {
@@ -424,11 +438,13 @@ function drawGrid(svg) {
     });
     
     // 2. Draw vertical time grid lines (every hour and every 10 minutes)
+    // h runs past 24 up to END_HOUR (28) to reach the service day's 04:00-next-day
+    // right edge; displayHour wraps it back to a real clock hour for the label text,
+    // while the X position uses the unwrapped offset (see serviceOffsetMinutesToX).
     for (let h = START_HOUR; h <= END_HOUR; h++) {
-        // Draw Hour major line
-        const hourTimeStr = `${String(h).padStart(2, '0')}:00:00`;
-        const x = timeToX(hourTimeStr);
-        
+        const displayHour = h % 24;
+        const x = serviceOffsetMinutesToX((h - START_HOUR) * 60);
+
         const line = document.createElementNS(SVG_NS, "line");
         line.setAttribute("x1", x);
         line.setAttribute("y1", MARGIN_TOP);
@@ -436,30 +452,29 @@ function drawGrid(svg) {
         line.setAttribute("y2", CHART_HEIGHT - MARGIN_BOTTOM);
         line.className.baseVal = "grid-line-major";
         svg.appendChild(line);
-        
+
         // Hour label text at top and bottom
         const topLabel = document.createElementNS(SVG_NS, "text");
         topLabel.setAttribute("x", x);
         topLabel.setAttribute("y", MARGIN_TOP - 15);
         topLabel.setAttribute("text-anchor", "middle");
         topLabel.className.baseVal = "time-label";
-        topLabel.textContent = `${String(h).padStart(2, '0')}:00`;
+        topLabel.textContent = `${String(displayHour).padStart(2, '0')}:00`;
         svg.appendChild(topLabel);
-        
+
         const bottomLabel = document.createElementNS(SVG_NS, "text");
         bottomLabel.setAttribute("x", x);
         bottomLabel.setAttribute("y", CHART_HEIGHT - MARGIN_BOTTOM + 25);
         bottomLabel.setAttribute("text-anchor", "middle");
         bottomLabel.className.baseVal = "time-label";
-        bottomLabel.textContent = `${String(h).padStart(2, '0')}:00`;
+        bottomLabel.textContent = `${String(displayHour).padStart(2, '0')}:00`;
         svg.appendChild(bottomLabel);
-        
+
         // Draw minute minor lines (every 10 minutes)
         if (h < END_HOUR) {
             for (let m = 10; m < 60; m += 10) {
-                const minTimeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
-                const xm = timeToX(minTimeStr);
-                
+                const xm = serviceOffsetMinutesToX((h - START_HOUR) * 60 + m);
+
                 const minLine = document.createElementNS(SVG_NS, "line");
                 minLine.setAttribute("x1", xm);
                 minLine.setAttribute("y1", MARGIN_TOP);
