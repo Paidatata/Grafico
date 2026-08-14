@@ -1,4 +1,16 @@
+import re
 from datetime import datetime, timedelta
+
+# Strict HH:MM:SS with real clock ranges: 00-23 hours, 00-59 minutes and seconds.
+# Shared by the Pydantic schemas and the service-layer guard so there is one definition
+# of "a valid time" — "25:99:99" must be rejected, not silently normalized.
+TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$"
+_TIME_RE = re.compile(TIME_PATTERN)
+
+
+def is_valid_time_str(time_str: str) -> bool:
+    return isinstance(time_str, str) and _TIME_RE.match(time_str) is not None
+
 
 # The operating day runs 04:00 -> 04:00 rather than midnight -> midnight, matching the
 # frontend chart's START_HOUR. Roughly 10 of the 251 real trips cross midnight, so any

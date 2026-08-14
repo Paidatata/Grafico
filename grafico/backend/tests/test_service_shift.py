@@ -3,7 +3,13 @@ from datetime import datetime
 
 from src import service
 from src.db import init_db
-from src.errors import ChronologyViolationError, LookbackExceededError, StationNotFoundError, TripNotFoundError
+from src.errors import (
+    ChronologyViolationError,
+    InvalidTimeError,
+    LookbackExceededError,
+    StationNotFoundError,
+    TripNotFoundError,
+)
 from src.schemas import TemplateImportStop, TemplateImportTrip
 
 
@@ -101,6 +107,16 @@ def test_shift_moves_dragged_and_every_downstream_stop_by_the_same_delta(db_sess
     assert times["LUZ"] == "05:14:00"  # dragged node: +4 min
     assert times["BAS"] == "05:24:00"  # downstream: also +4 min
     assert times["RGS"] == "05:34:00"  # downstream: also +4 min
+
+
+def test_shift_with_invalid_time_raises_a_domain_error(db_session):
+    _seed(db_session)
+    for bad_time in ["not-a-time", "25:00:00", "12:60:00", "12:00:60", "5:00:00", "", "05:00"]:
+        with pytest.raises(InvalidTimeError):
+            service.shift_stop(
+                db_session, "TRIP_BFU-RGS_050000", "LUZ", bad_time,
+                now=datetime(2026, 8, 13, 5, 10, 0),
+            )
 
 
 def test_shift_unknown_trip_raises(db_session):

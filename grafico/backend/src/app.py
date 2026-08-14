@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
@@ -7,12 +8,20 @@ from sqlalchemy.orm import Session
 
 from . import service
 from .db import SessionLocal, init_db
-from .errors import ChronologyViolationError, LookbackExceededError, StationNotFoundError, TripNotFoundError
+from .errors import (
+    ChronologyViolationError,
+    InvalidTimeError,
+    LookbackExceededError,
+    StationNotFoundError,
+    TripNotFoundError,
+)
 from .schemas import LookbackSetting, ScheduleOut, ShiftRequest, TemplateImportTrip, TripOut
 from .scheduler import run_startup_catchup_if_needed, start_scheduler
 from .ws_manager import ConnectionManager
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "src"
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Grafico Railway Schedule API")
 manager = ConnectionManager()
@@ -37,6 +46,18 @@ def on_startup() -> None:
     app.state.scheduler = start_scheduler()
 
 
+@app.exception_handler(Exception)
+def _unhandled_error(request, exc: Exception):
+    """Catch-all so an unexpected failure is a JSON 500, never a raw stack trace.
+
+    The specific domain handlers below still take precedence — Starlette dispatches to
+    the most specific registered handler for the raised type. The message is deliberately
+    generic; the detail goes to the server log instead of the client.
+    """
+    logger.exception("Unhandled error serving %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 @app.exception_handler(TripNotFoundError)
 def _trip_not_found(request, exc: TripNotFoundError):
     return JSONResponse(status_code=404, content={"detail": str(exc)})
@@ -45,6 +66,11 @@ def _trip_not_found(request, exc: TripNotFoundError):
 @app.exception_handler(StationNotFoundError)
 def _station_not_found(request, exc: StationNotFoundError):
     return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(InvalidTimeError)
+def _invalid_time(request, exc: InvalidTimeError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.exception_handler(ChronologyViolationError)

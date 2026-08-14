@@ -3,11 +3,18 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from . import models
-from .errors import ChronologyViolationError, LookbackExceededError, StationNotFoundError, TripNotFoundError
+from .errors import (
+    ChronologyViolationError,
+    InvalidTimeError,
+    LookbackExceededError,
+    StationNotFoundError,
+    TripNotFoundError,
+)
 from .schemas import ScheduleOut, StopOut, TemplateImportTrip, TripOut
 from .timeutils import (
     datetime_to_service_minutes,
     effective_reset_date,
+    is_valid_time_str,
     minutes_to_time_str,
     time_str_to_minutes,
     time_str_to_service_minutes,
@@ -147,6 +154,9 @@ def shift_stop(
     db: Session, trip_id: str, station_id: str, new_time: str, now: datetime | None = None,
 ) -> TripOut:
     now = now or datetime.now()
+    if not is_valid_time_str(new_time):
+        raise InvalidTimeError(f"new_time must be HH:MM:SS between 00:00:00 and 23:59:59, got {new_time!r}")
+
     stops = _trip_stops(db, trip_id)
     if not stops:
         raise TripNotFoundError(trip_id)

@@ -78,6 +78,80 @@ def test_shift_stop_unknown_trip_returns_404(app_client):
     assert response.status_code == 404
 
 
+def _import_single_trip(app_client):
+    app_client.post("/api/template/import", json=[
+        {
+            "trip_id": "TRIP_BFU-RGS_050000",
+            "direction": "BFU-RGS",
+            "stops": [
+                {"station": "BFU", "time": "05:00:00"},
+                {"station": "RGS", "time": "05:30:00"},
+            ],
+        }
+    ])
+
+
+def test_shift_stop_with_unparseable_time_returns_400(app_client):
+    """The design spec mandates 400 for an unparseable new_time, not an opaque 500."""
+    _import_single_trip(app_client)
+
+    response = app_client.post("/api/stops/shift", json={
+        "trip_id": "TRIP_BFU-RGS_050000", "station_id": "BFU", "new_time": "not-a-time",
+    })
+    assert response.status_code == 400
+    assert "new_time" in response.json()["detail"]
+
+
+def test_shift_stop_with_out_of_range_time_returns_400(app_client):
+    """"25:00:00" parses arithmetically but is not a real clock time — reject, don't normalize."""
+    _import_single_trip(app_client)
+
+    for bad_time in ["25:00:00", "12:60:00", "12:00:60", "5:00:00", "05:00"]:
+        response = app_client.post("/api/stops/shift", json={
+            "trip_id": "TRIP_BFU-RGS_050000", "station_id": "BFU", "new_time": bad_time,
+        })
+        assert response.status_code == 400, f"{bad_time} should be rejected with 400"
+
+
+def test_template_import_with_malformed_time_is_rejected(app_client):
+    response = app_client.post("/api/template/import", json=[
+        {
+            "trip_id": "TRIP_BFU-RGS_050000",
+            "direction": "BFU-RGS",
+            "stops": [{"station": "BFU", "time": "25:99:99"}],
+        }
+    ])
+    assert response.status_code == 422
+
+
+def test_negative_lookback_minutes_is_rejected(app_client):
+    """A negative window would lock every node on the chart."""
+    response = app_client.put("/api/settings/edit-lookback-minutes", json={"edit_lookback_minutes": -5})
+    assert response.status_code == 422
+
+    # The stored setting must be untouched by the rejected write.
+    assert app_client.get("/api/settings/edit-lookback-minutes").json()["edit_lookback_minutes"] >= 0
+
+
+def test_unhandled_exception_returns_json_500_not_a_stack_trace(monkeypatch):
+    from fastapi.testclient import TestClient
+    from src.app import app
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr("src.service.get_live_schedule", _boom)
+
+    # raise_server_exceptions=False so the client sees the response the catch-all
+    # handler produced rather than the exception Starlette re-raises for the server log.
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/schedule")
+
+    assert response.status_code == 500
+    assert "detail" in response.json()
+    assert "kaboom" not in response.text  # internals stay out of the client-facing body
+
+
 def test_reset_trip_endpoint(app_client, monkeypatch):
     _freeze_service_now(monkeypatch, datetime(2026, 8, 13, 5, 0, 0))
     payload = [

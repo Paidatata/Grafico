@@ -1,6 +1,8 @@
 from typing import List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from .timeutils import TIME_PATTERN
 
 
 class StopOut(BaseModel):
@@ -26,7 +28,7 @@ class ScheduleOut(BaseModel):
 
 class TemplateImportStop(BaseModel):
     station: str
-    time: str
+    time: str = Field(pattern=TIME_PATTERN)
 
 
 class TemplateImportTrip(BaseModel):
@@ -38,8 +40,13 @@ class TemplateImportTrip(BaseModel):
 class ShiftRequest(BaseModel):
     trip_id: str
     station_id: str
+    # Deliberately NOT a Pydantic pattern constraint: the design spec requires a 400 for
+    # an unparseable new_time, and a schema-level rejection would surface as a 422.
+    # service.shift_stop validates it against timeutils.TIME_PATTERN and raises
+    # InvalidTimeError, which app.py maps to 400.
     new_time: str
 
 
 class LookbackSetting(BaseModel):
-    edit_lookback_minutes: int
+    # A negative window would lock every node on the chart.
+    edit_lookback_minutes: int = Field(ge=0)
