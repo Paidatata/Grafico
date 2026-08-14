@@ -1,18 +1,14 @@
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import os
+_TEMP_DB_DIR = tempfile.mkdtemp(prefix="grafico-test-db-")
+os.environ["GRAFICO_DB_PATH"] = str(Path(_TEMP_DB_DIR) / "test_railway.db")
 
 import pytest
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _use_temp_db(tmp_path_factory):
-    db_path = tmp_path_factory.mktemp("data") / "test_railway.db"
-    os.environ["GRAFICO_DB_PATH"] = str(db_path)
-    yield
 
 
 @pytest.fixture(autouse=True)

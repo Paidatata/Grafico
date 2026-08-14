@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from src import service
 from src.db import init_db
 from src.errors import TripNotFoundError
@@ -57,8 +59,13 @@ def test_perform_daily_reset_restores_live_from_template(db_session):
     init_db(db_session.get_bind())
     service.import_template(db_session, _sample_trips())
 
-    # Simulate a live edit, then reset and confirm it reverts.
-    service.shift_stop(db_session, "TRIP_BFU-RGS_050000", "LUZ", "05:20:00")
+    # Simulate a live edit, then reset and confirm it reverts. `now` is pinned close to
+    # the stop's scheduled 05:10 time so the shift falls inside the default lookback
+    # window regardless of the real wall-clock time the test suite happens to run at.
+    service.shift_stop(
+        db_session, "TRIP_BFU-RGS_050000", "LUZ", "05:20:00",
+        now=datetime(2026, 8, 13, 5, 15, 0),
+    )
     service.perform_daily_reset(db_session)
 
     trip = service.get_trip(db_session, "TRIP_BFU-RGS_050000")

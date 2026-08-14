@@ -3,8 +3,9 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from . import models
-from .errors import TripNotFoundError
+from .errors import ChronologyViolationError, LookbackExceededError, StationNotFoundError, TripNotFoundError
 from .schemas import ScheduleOut, StopOut, TemplateImportTrip, TripOut
+from .timeutils import minutes_to_time_str, time_str_to_minutes
 
 DEFAULT_LOOKBACK_MINUTES = 15
 
@@ -97,3 +98,48 @@ def _set_setting(db: Session, key: str, value: str) -> None:
         setting.value = value
     else:
         db.add(models.Setting(key=key, value=value))
+
+
+def get_edit_lookback_minutes(db: Session) -> int:
+    setting = db.query(models.Setting).filter(models.Setting.key == "edit_lookback_minutes").first()
+    return int(setting.value) if setting else DEFAULT_LOOKBACK_MINUTES
+
+
+def shift_stop(
+    db: Session, trip_id: str, station_id: str, new_time: str, now: datetime | None = None,
+) -> TripOut:
+    now = now or datetime.now()
+    stops = _trip_stops(db, trip_id)
+    if not stops:
+        raise TripNotFoundError(trip_id)
+
+    idx = next((i for i, s in enumerate(stops) if s.station_id == station_id), None)
+    if idx is None:
+        raise StationNotFoundError(station_id)
+
+    target = stops[idx]
+    new_minutes = time_str_to_minutes(new_time)
+
+    if idx > 0:
+        upstream_minutes = time_str_to_minutes(stops[idx - 1].departure_time)
+        if new_minutes < upstream_minutes:
+            raise ChronologyViolationError(
+                f"{new_time} is earlier than upstream stop departure {stops[idx - 1].departure_time}"
+            )
+
+    lookback_minutes = get_edit_lookback_minutes(db)
+    current_minutes = time_str_to_minutes(target.departure_time)
+    now_minutes = now.hour * 60 + now.minute + now.second / 60
+    if (now_minutes - current_minutes) > lookback_minutes:
+        raise LookbackExceededError(
+            f"Stop at {target.departure_time} is more than {lookback_minutes} minutes in the past"
+        )
+
+    delta = new_minutes - current_minutes
+
+    for stop in stops[idx:]:
+        stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + delta)
+        stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
+
+    db.commit()
+    return get_trip(db, trip_id)
