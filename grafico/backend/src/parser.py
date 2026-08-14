@@ -107,7 +107,9 @@ def parse_dxf_schedule():
     # Process last entity
     if current_entity and current_entity.get('layer') in target_layers:
         process_trip(current_entity, trips)
-        
+
+    disambiguate_trip_ids(trips)
+
     # Save to JSON
     with open(output_path, 'w', encoding='utf-8') as out_f:
         json.dump(trips, out_f, indent=2, ensure_ascii=False)
@@ -136,11 +138,11 @@ def process_trip(entity, trips):
     if len(stops) >= 2:
         # Sort stops chronologically by X coordinate (time)
         stops = sorted(stops, key=lambda s: s["x_coord"])
-        
+
         direction = entity.get('layer')
         start_time = stops[0]["time"]
         end_time = stops[-1]["time"]
-        
+
         trips.append({
             "trip_id": f"TRIP_{direction}_{start_time.replace(':', '')}",
             "direction": direction,
@@ -148,6 +150,22 @@ def process_trip(entity, trips):
             "end_time": end_time,
             "stops": stops
         })
+
+def disambiguate_trip_ids(trips):
+    # Two distinct DXF entities can share both direction and start_time (e.g. a train
+    # starting its run partway down the line at the same minute another train departs
+    # the terminal) — trip_id is built from only those two fields, so they'd otherwise
+    # collide and violate the backend's trip_id primary key. First occurrence of an id
+    # keeps it unchanged; each later collision gets a stable "_2", "_3", ... suffix in
+    # the order trips were appended (deterministic for a given DXF file).
+    seen_counts = {}
+    for trip in trips:
+        base_id = trip["trip_id"]
+        occurrence = seen_counts.get(base_id, 0) + 1
+        seen_counts[base_id] = occurrence
+        if occurrence > 1:
+            trip["trip_id"] = f"{base_id}_{occurrence}"
+    return trips
 
 if __name__ == "__main__":
     parse_dxf_schedule()

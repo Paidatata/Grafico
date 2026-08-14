@@ -5,7 +5,7 @@ import sys
 # Add backend/src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
-from parser import coord_to_time, get_station_code
+from parser import coord_to_time, disambiguate_trip_ids, get_station_code
 
 class TestParserConversions(unittest.TestCase):
     
@@ -40,6 +40,37 @@ class TestParserConversions(unittest.TestCase):
         # Far away Y coordinate should return None
         self.assertIsNone(get_station_code(100.0))
         self.assertIsNone(get_station_code(15000.0))
+
+
+class TestDisambiguateTripIds(unittest.TestCase):
+
+    def test_leaves_unique_ids_untouched(self):
+        trips = [{"trip_id": "TRIP_BFU-RGS_050000"}, {"trip_id": "TRIP_BFU-RGS_060000"}]
+        disambiguate_trip_ids(trips)
+        self.assertEqual([t["trip_id"] for t in trips], ["TRIP_BFU-RGS_050000", "TRIP_BFU-RGS_060000"])
+
+    def test_suffixes_later_occurrences_of_a_collision(self):
+        # Reproduces the real-data collision: two distinct trips (different stop
+        # lists) sharing direction + start_time.
+        trips = [
+            {"trip_id": "TRIP_RGS-BFU_043700", "stops": ["SAN", "PSA"]},
+            {"trip_id": "TRIP_RGS-BFU_043700", "stops": ["MAU", "CPV"]},
+        ]
+        disambiguate_trip_ids(trips)
+        self.assertEqual(trips[0]["trip_id"], "TRIP_RGS-BFU_043700")
+        self.assertEqual(trips[1]["trip_id"], "TRIP_RGS-BFU_043700_2")
+
+    def test_handles_three_way_collision(self):
+        trips = [{"trip_id": "X"}, {"trip_id": "X"}, {"trip_id": "X"}]
+        disambiguate_trip_ids(trips)
+        self.assertEqual([t["trip_id"] for t in trips], ["X", "X_2", "X_3"])
+
+    def test_result_has_no_duplicate_ids(self):
+        trips = [{"trip_id": "A"}, {"trip_id": "B"}, {"trip_id": "A"}, {"trip_id": "A"}, {"trip_id": "B"}]
+        disambiguate_trip_ids(trips)
+        ids = [t["trip_id"] for t in trips]
+        self.assertEqual(len(ids), len(set(ids)))
+
 
 if __name__ == "__main__":
     unittest.main()
