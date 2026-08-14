@@ -2,7 +2,7 @@ from datetime import datetime
 
 from src import service
 from src.db import STATIONS_METADATA, init_db
-from src.errors import TripNotFoundError
+from src.errors import DuplicateTripError, TripNotFoundError
 from src.schemas import TemplateImportStop, TemplateImportTrip
 
 import pytest
@@ -84,6 +84,66 @@ def test_import_template_replaces_previous_template(db_session):
 
     schedule = service.get_live_schedule(db_session)
     assert len(schedule.trips) == 1
+
+
+def _duplicate_trip_id_payload():
+    """backend/data/schedule.json really does contain a repeated trip_id.
+
+    parser.py's id scheme is the root cause and is out of scope here; import must
+    reject the payload cleanly rather than letting an IntegrityError escape as a 500.
+    """
+    return [
+        TemplateImportTrip(
+            trip_id="TRIP_RGS-BFU_043700", direction="RGS-BFU",
+            stops=[TemplateImportStop(station="RGS", time="04:37:00")],
+        ),
+        TemplateImportTrip(
+            trip_id="TRIP_RGS-BFU_043700", direction="RGS-BFU",
+            stops=[TemplateImportStop(station="RGS", time="04:37:00")],
+        ),
+    ]
+
+
+def test_import_rejects_duplicate_trip_ids(db_session):
+    init_db(db_session.get_bind())
+
+    with pytest.raises(DuplicateTripError) as excinfo:
+        service.import_template(db_session, _duplicate_trip_id_payload())
+
+    assert "TRIP_RGS-BFU_043700" in str(excinfo.value)  # names the offending id
+
+
+def test_import_rejects_duplicate_stations_within_one_trip(db_session):
+    init_db(db_session.get_bind())
+
+    with pytest.raises(DuplicateTripError) as excinfo:
+        service.import_template(db_session, [
+            TemplateImportTrip(
+                trip_id="TRIP_BFU-RGS_050000", direction="BFU-RGS",
+                stops=[
+                    TemplateImportStop(station="BFU", time="05:00:00"),
+                    TemplateImportStop(station="BFU", time="05:04:00"),
+                ],
+            )
+        ])
+
+    assert "BFU" in str(excinfo.value)
+
+
+def test_rejected_import_leaves_the_previous_schedule_intact(db_session):
+    init_db(db_session.get_bind())
+    service.import_template(db_session, _sample_trips())
+
+    with pytest.raises(DuplicateTripError):
+        service.import_template(db_session, _duplicate_trip_id_payload())
+
+    # No partial state: the previously imported schedule is untouched...
+    schedule = service.get_live_schedule(db_session)
+    assert [t.trip_id for t in schedule.trips] == ["TRIP_BFU-RGS_050000"]
+
+    # ...and a subsequent valid import still works.
+    assert service.import_template(db_session, _sample_trips()) == 1
+    assert len(service.get_live_schedule(db_session).trips) == 1
 
 
 def test_get_trip_raises_when_missing(db_session):

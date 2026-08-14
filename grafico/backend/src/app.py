@@ -10,6 +10,7 @@ from . import service
 from .db import SessionLocal, init_db
 from .errors import (
     ChronologyViolationError,
+    DuplicateTripError,
     InvalidTimeError,
     LookbackExceededError,
     StationNotFoundError,
@@ -66,6 +67,11 @@ def _trip_not_found(request, exc: TripNotFoundError):
 @app.exception_handler(StationNotFoundError)
 def _station_not_found(request, exc: StationNotFoundError):
     return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(DuplicateTripError)
+def _duplicate_trip(request, exc: DuplicateTripError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.exception_handler(InvalidTimeError)

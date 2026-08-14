@@ -10,6 +10,10 @@ class StationNotFoundError(Exception):
         super().__init__(f"Station not found on trip: {station_id}")
 
 
+class DuplicateTripError(Exception):
+    """An import payload repeats a trip_id, or a station within one trip (maps to 400)."""
+
+
 class InvalidTimeError(Exception):
     """A caller-supplied clock time is unparseable or out of range (maps to 400)."""
 

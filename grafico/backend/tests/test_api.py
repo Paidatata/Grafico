@@ -91,6 +91,35 @@ def _import_single_trip(app_client):
     ])
 
 
+def test_import_with_duplicate_trip_id_returns_400_not_500(app_client):
+    """The documented onboarding path imports backend/data/schedule.json, which has a
+    repeated trip_id. It must fail with a clear 400, not an IntegrityError-driven 500."""
+    duplicated = [
+        {
+            "trip_id": "TRIP_RGS-BFU_043700", "direction": "RGS-BFU",
+            "stops": [{"station": "RGS", "time": "04:37:00"}],
+        },
+        {
+            "trip_id": "TRIP_RGS-BFU_043700", "direction": "RGS-BFU",
+            "stops": [{"station": "RGS", "time": "04:37:00"}],
+        },
+    ]
+    response = app_client.post("/api/template/import", json=duplicated)
+    assert response.status_code == 400
+    assert "TRIP_RGS-BFU_043700" in response.json()["detail"]
+
+    # The rejected import left no partial state, so a valid one still succeeds.
+    ok = app_client.post("/api/template/import", json=[
+        {
+            "trip_id": "TRIP_BFU-RGS_050000", "direction": "BFU-RGS",
+            "stops": [{"station": "BFU", "time": "05:00:00"}],
+        }
+    ])
+    assert ok.status_code == 200
+    assert ok.json() == {"imported_trips": 1}
+    assert len(app_client.get("/api/schedule").json()["trips"]) == 1
+
+
 def test_shift_stop_with_unparseable_time_returns_400(app_client):
     """The design spec mandates 400 for an unparseable new_time, not an opaque 500."""
     _import_single_trip(app_client)

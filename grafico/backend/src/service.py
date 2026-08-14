@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from . import models
 from .errors import (
     ChronologyViolationError,
+    DuplicateTripError,
     InvalidTimeError,
     LookbackExceededError,
     StationNotFoundError,
@@ -23,7 +24,38 @@ from .timeutils import (
 DEFAULT_LOOKBACK_MINUTES = 15
 
 
+def _validate_import_payload(trips: list[TemplateImportTrip]) -> None:
+    """Reject payloads SQLite's primary keys would reject, with a message naming the culprit.
+
+    Runs before any write so a bad payload leaves the existing template untouched
+    instead of surfacing as an opaque IntegrityError 500 partway through the import.
+    """
+    seen_trip_ids: set[str] = set()
+    duplicate_trip_ids: list[str] = []
+    for trip in trips:
+        if trip.trip_id in seen_trip_ids:
+            if trip.trip_id not in duplicate_trip_ids:
+                duplicate_trip_ids.append(trip.trip_id)
+        seen_trip_ids.add(trip.trip_id)
+
+    if duplicate_trip_ids:
+        raise DuplicateTripError(
+            "Duplicate trip_id in import payload: " + ", ".join(duplicate_trip_ids)
+        )
+
+    for trip in trips:
+        seen_stations: set[str] = set()
+        for stop in trip.stops:
+            if stop.station in seen_stations:
+                raise DuplicateTripError(
+                    f"Trip {trip.trip_id} lists station {stop.station} more than once"
+                )
+            seen_stations.add(stop.station)
+
+
 def import_template(db: Session, trips: list[TemplateImportTrip]) -> int:
+    _validate_import_payload(trips)
+
     db.query(models.TemplatePlannedStop).delete()
     db.query(models.TemplateTrip).delete()
 
