@@ -31,7 +31,12 @@
                     <button class="tab-btn" id="btn-l7" onclick="switchLine('Line 7')">Linha 7 (Rubi)</button>
                     <button class="tab-btn" id="btn-l710" onclick="switchLine('Line 710')">Linha 710 (Unificada)</button>
                 </div>
-                
+
+                <div class="chart-action-buttons">
+                    <button class="btn btn-secondary btn-sm" id="btn-mock-real" onclick="loadMockRealizedData()">📈 Mostrar Realizado</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetToOriginal()">🔄 Resetar</button>
+                </div>
+
                 <div class="file-upload-wrapper">
                     <label for="json-upload" class="upload-label" id="upload-label-id">
                         <span class="upload-icon">📂</span> Importar JSON
@@ -45,25 +50,20 @@
 
         <!-- Main Content Layout -->
         <main class="main-content">
-            <!-- Sidebar (Train List) -->
-            <aside class="sidebar glass-panel">
+            <!-- Sidebar Left: odd-numbered trains (destino Barra Funda) -->
+            <aside class="sidebar sidebar-left glass-panel">
                 <div class="panel-header">
-                    <h2>Trens Programados</h2>
-                    <span class="badge" id="train-count">0 Trens</span>
+                    <h2>Sentido BFU (Ímpares)</h2>
+                    <span class="badge" id="train-count-odd">0 Trens</span>
                 </div>
-                
+
                 <div class="search-box">
                     <span class="search-icon">🔍</span>
-                    <input type="text" id="search-train" placeholder="Buscar trem (ex: P15, R2)..." oninput="filterTrains()">
+                    <input type="text" id="search-train-odd" placeholder="Buscar trem (ex: P15)..." oninput="filterTrainList('odd')">
                 </div>
-                
-                <div class="toggle-buttons">
-                    <button class="btn btn-secondary btn-sm" id="btn-mock-real" onclick="loadMockRealizedData()">📈 Mostrar Realizado</button>
-                    <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetToOriginal()">🔄 Resetar</button>
-                </div>
-                
+
                 <div class="train-list-container">
-                    <ul id="train-list" class="train-list">
+                    <ul id="train-list-odd" class="train-list">
                         <!-- Populated dynamically -->
                     </ul>
                 </div>
@@ -79,12 +79,31 @@
                         <span class="legend-item"><span class="node-style"></span> Nó Arrastável</span>
                     </div>
                 </div>
-                
+
                 <!-- SVG Scrollable Container -->
                 <div class="chart-scroll-container" id="chart-container">
                     <!-- The SVG will be generated here dynamically -->
                 </div>
             </section>
+
+            <!-- Sidebar Right: even-numbered trains (destino RGS/Mauá) -->
+            <aside class="sidebar sidebar-right glass-panel">
+                <div class="panel-header">
+                    <h2>Sentido RGS/Mauá (Pares)</h2>
+                    <span class="badge" id="train-count-even">0 Trens</span>
+                </div>
+
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-train-even" placeholder="Buscar trem (ex: R2)..." oninput="filterTrainList('even')">
+                </div>
+
+                <div class="train-list-container">
+                    <ul id="train-list-even" class="train-list">
+                        <!-- Populated dynamically -->
+                    </ul>
+                </div>
+            </aside>
         </main>
         
         <!-- Live Tooltip -->

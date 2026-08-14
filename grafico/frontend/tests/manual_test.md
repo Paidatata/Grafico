@@ -69,3 +69,11 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 3. Confirme que a linha do trem é uma polilinha contínua e crescente da esquerda para a direita — sem "voltar" para a borda esquerda do gráfico no trecho após a meia-noite.
 4. Confirme que os rótulos de hora no topo/base do gráfico, à direita de "23:00", mostram "00:00", "01:00", "02:00", "03:00" (não "24:00", "25:00"...).
 5. Arraste um nó de parada logo após a meia-noite (ex: `00:01`) e confirme que a propagação para as paradas seguintes (também após a meia-noite) funciona normalmente.
+
+## Cenário 9: Listas Laterais Agrupadas e Filtradas por Trânsito
+
+1. Abra a aplicação com o `schedule.json` real importado.
+2. Confirme que existem duas listas, uma de cada lado do gráfico: "Sentido BFU (Ímpares)" à esquerda mostrando só códigos `P...`, "Sentido RGS/Mauá (Pares)" à direita mostrando só `R...`/`M...`.
+3. Confirme que cada lista mostra só os trens cuja viagem (partida até chegada) inclui o horário atual — não as 251 viagens do dia inteiro.
+4. Role o gráfico manualmente para um horário bem diferente do atual (ex: de manhã cedo). Confirme que as duas listas se atualizam para mostrar os trens circulando naquele horário rolado, não mais no horário atual.
+5. Digite um código na busca da lista esquerda (ex: "P15") e confirme que só a lista esquerda é filtrada — a direita continua mostrando todos os trens em trânsito dela.

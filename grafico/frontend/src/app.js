@@ -83,6 +83,39 @@ function dateToServiceMinutes(date) {
     return ((raw - START_HOUR * 60) % (24 * 60) + (24 * 60)) % (24 * 60);
 }
 
+// Reads whatever time is currently centered in the chart's visible viewport —
+// the "reference time" the sidebar lists and the now-line represent. Falls
+// back to the real clock if the chart hasn't rendered yet (e.g. before the
+// first successful load).
+function getReferenceTime() {
+    const container = document.getElementById("chart-container");
+    if (!container || container.clientWidth === 0) return currentClockTimeStr();
+    const centerX = container.scrollLeft + container.clientWidth / 2;
+    return xToTime(centerX);
+}
+
+function currentClockTimeStr() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+}
+
+// True if referenceTimeStr falls within [trip.start_time, trip.end_time], in
+// service-day minutes so trips crossing midnight behave the same way the
+// backend's chronology/lookback checks and the drag-lock check already do.
+function isTripInTransitAt(trip, referenceTimeStr) {
+    const ref = timeStrToServiceMinutes(referenceTimeStr);
+    const start = timeStrToServiceMinutes(trip.start_time);
+    const end = timeStrToServiceMinutes(trip.end_time);
+    return ref >= start && ref <= end;
+}
+
+// "P15" -> 15. Used to sort each sidebar panel by departure order (parser.py
+// assigns train_code numbers in departure order already, so sorting by number
+// is equivalent to sorting by start_time).
+function trainNumber(trainCode) {
+    return parseInt(trainCode.slice(1), 10);
+}
+
 function minutesToTimeStr(totalMinutes) {
     const h = Math.floor(totalMinutes / 60) % 24;
     const m = Math.floor(totalMinutes % 60);
@@ -182,6 +215,7 @@ const mockRealizedData = [
 // ==========================================================================
 window.onload = function() {
     loadDefaultSchedule();
+    document.getElementById("chart-container").addEventListener("scroll", onChartScroll);
 };
 
 function loadDefaultSchedule() {
@@ -313,25 +347,24 @@ function handleFileUpload(event) {
 // Render Application
 // ==========================================================================
 function renderApp() {
-    renderTrainList();
+    renderTrainLists();
     renderChart();
 }
 
-function renderTrainList() {
-    const listElement = document.getElementById("train-list");
+function renderTrainListPanel(listElementId, badgeElementId, trips) {
+    const listElement = document.getElementById(listElementId);
     listElement.innerHTML = "";
-    
-    const lineTrips = getFilteredTrips();
-    document.getElementById("train-count").textContent = `${lineTrips.length} Trens`;
-    
-    lineTrips.forEach(trip => {
+
+    document.getElementById(badgeElementId).textContent = `${trips.length} Trens`;
+
+    trips.forEach(trip => {
         const li = document.createElement("li");
         li.className = `train-item ${appState.selectedTripId === trip.trip_id ? 'selected' : ''}`;
         li.onclick = () => selectTrip(trip.trip_id);
-        
+
         const startStation = trip.stops[0].station;
         const endStation = trip.stops[trip.stops.length - 1].station;
-        
+
         li.innerHTML = `
             <div class="train-info">
                 <span class="train-code-label">${trip.train_code}</span>
@@ -341,6 +374,11 @@ function renderTrainList() {
         `;
         listElement.appendChild(li);
     });
+}
+
+function renderTrainLists() {
+    renderTrainListPanel("train-list-odd", "train-count-odd", getOddTrips());
+    renderTrainListPanel("train-list-even", "train-count-even", getEvenTrips());
 }
 
 function getFilteredTrips() {
@@ -354,6 +392,22 @@ function getFilteredTrips() {
         const hasEnd = lineStations.includes(trip.stops[trip.stops.length - 1].station);
         return hasStart && hasEnd;
     });
+}
+
+function getOddTrips() {
+    const referenceTime = getReferenceTime();
+    return getFilteredTrips()
+        .filter(trip => trip.train_code.startsWith("P"))
+        .filter(trip => isTripInTransitAt(trip, referenceTime))
+        .sort((a, b) => trainNumber(a.train_code) - trainNumber(b.train_code));
+}
+
+function getEvenTrips() {
+    const referenceTime = getReferenceTime();
+    return getFilteredTrips()
+        .filter(trip => !trip.train_code.startsWith("P"))
+        .filter(trip => isTripInTransitAt(trip, referenceTime))
+        .sort((a, b) => trainNumber(a.train_code) - trainNumber(b.train_code));
 }
 
 function switchLine(lineType) {
@@ -744,18 +798,34 @@ function hideTooltip() {
 // ==========================================================================
 // Sidebar Controllers (Search, Toggle Realized, Reset, Export)
 // ==========================================================================
-function filterTrains() {
-    const query = document.getElementById("search-train").value.toLowerCase();
-    const items = document.querySelectorAll(".train-item");
-    
+function filterTrainList(side) {
+    const inputId = side === "odd" ? "search-train-odd" : "search-train-even";
+    const listId = side === "odd" ? "train-list-odd" : "train-list-even";
+
+    const query = document.getElementById(inputId).value.toLowerCase();
+    const items = document.querySelectorAll(`#${listId} .train-item`);
+
     items.forEach(item => {
-        const text = item.textContent.toLowerCase();
-        if (text.includes(query)) {
-            item.style.display = "flex";
-        } else {
-            item.style.display = "none";
-        }
+        item.style.display = item.textContent.toLowerCase().includes(query) ? "flex" : "none";
     });
+}
+
+let trainListRefreshScheduled = false;
+
+// Re-renders both sidebar panels on the next animation frame at most once,
+// even if `scroll` fires dozens of times in that frame — scroll fires very
+// frequently and a full list re-render on every pixel would jank the scroll.
+function scheduleTrainListRefresh() {
+    if (trainListRefreshScheduled) return;
+    trainListRefreshScheduled = true;
+    requestAnimationFrame(() => {
+        trainListRefreshScheduled = false;
+        renderTrainLists();
+    });
+}
+
+function onChartScroll() {
+    scheduleTrainListRefresh();
 }
 
 function loadMockRealizedData() {
