@@ -523,6 +523,9 @@ function drawTrainPaths(svg) {
                 circle.setAttribute("cx", px);
                 circle.setAttribute("cy", py);
                 circle.setAttribute("r", 5);
+                // Stable id so updateSvgVisuals can look circles up by (trip, stop)
+                // instead of assuming SVG document order matches trip.stops order.
+                circle.setAttribute("id", `node-${trip.trip_id}-${stopIdx}`);
 
                 // Service-day minutes on both sides so a stop just after midnight isn't
                 // mistaken for one ~24h in the past (or the check silently bypassed).
@@ -692,15 +695,14 @@ function updateSvgVisuals(trip) {
     
     const polyline = document.getElementById(`line-${trip.trip_id}`);
     if (polyline) polyline.setAttribute("points", pointsStr);
-    
-    // Update node positions (circles)
-    const svg = document.getElementById("train-chart-svg");
-    const circles = svg.getElementsByTagName("circle");
-    
+
+    // Update node positions (circles), looked up by the stable id assigned in
+    // drawTrainPaths rather than by position in the SVG's circle list.
     trip.stops.forEach((stop, stopIdx) => {
         const px = timeToX(stop.time);
-        if (circles[stopIdx]) {
-            circles[stopIdx].setAttribute("cx", px);
+        const circle = document.getElementById(`node-${trip.trip_id}-${stopIdx}`);
+        if (circle) {
+            circle.setAttribute("cx", px);
         }
     });
 }
