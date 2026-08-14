@@ -9,6 +9,7 @@ from . import service
 from .db import SessionLocal, init_db
 from .errors import ChronologyViolationError, LookbackExceededError, StationNotFoundError, TripNotFoundError
 from .schemas import LookbackSetting, ScheduleOut, ShiftRequest, TemplateImportTrip, TripOut
+from .scheduler import run_startup_catchup_if_needed, start_scheduler
 from .ws_manager import ConnectionManager
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "src"
@@ -28,6 +29,12 @@ def get_db():
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    db = SessionLocal()
+    try:
+        run_startup_catchup_if_needed(db)
+    finally:
+        db.close()
+    app.state.scheduler = start_scheduler()
 
 
 @app.exception_handler(TripNotFoundError)
