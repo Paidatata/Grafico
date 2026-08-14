@@ -64,13 +64,22 @@ def _trip_stops(db: Session, trip_id: str) -> list[models.PlannedStop]:
     )
 
 
+def _station_y_lookup(db: Session) -> dict[str, float]:
+    """station_id -> DXF y_coordinate, used to populate StopOut.y_coord.
+
+    Built once per request (never per trip) since every trip in a schedule shares it.
+    """
+    return {station.id: station.y_coordinate for station in db.query(models.Station).all()}
+
+
 def get_live_schedule(db: Session) -> ScheduleOut:
+    station_y = _station_y_lookup(db)
     trips_out = []
     for trip in db.query(models.Trip).all():
         stops = _trip_stops(db, trip.id)
         if not stops:
             continue
-        trips_out.append(_trip_to_out(trip, stops))
+        trips_out.append(_trip_to_out(trip, stops, station_y))
     return ScheduleOut(trips=trips_out)
 
 
@@ -79,16 +88,27 @@ def get_trip(db: Session, trip_id: str) -> TripOut:
     if not stops:
         raise TripNotFoundError(trip_id)
     trip = db.query(models.Trip).filter(models.Trip.id == trip_id).first()
-    return _trip_to_out(trip, stops)
+    return _trip_to_out(trip, stops, _station_y_lookup(db))
 
 
-def _trip_to_out(trip: models.Trip, stops: list[models.PlannedStop]) -> TripOut:
+def _trip_to_out(
+    trip: models.Trip, stops: list[models.PlannedStop], station_y: dict[str, float],
+) -> TripOut:
     return TripOut(
         trip_id=trip.id,
         direction=trip.direction,
         start_time=stops[0].departure_time,
         end_time=stops[-1].departure_time,
-        stops=[StopOut(station=s.station_id, time=s.departure_time) for s in stops],
+        stops=[
+            StopOut(
+                station=s.station_id,
+                time=s.departure_time,
+                # 0.0 only if a stop references a station missing from the table (SQLite
+                # does not enforce the FK); the stop still renders rather than NaN-ing out.
+                y_coord=station_y.get(s.station_id, 0.0),
+            )
+            for s in stops
+        ],
     )
 
 

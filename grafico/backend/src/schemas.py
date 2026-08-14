@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 
 from pydantic import BaseModel
 
@@ -6,6 +6,10 @@ from pydantic import BaseModel
 class StopOut(BaseModel):
     station: str
     time: str
+    # DXF Y coordinate of the stop's station. The frontend maps this to an SVG Y
+    # pixel (`dxfYToSvg`) for every polyline point and drag node, so it must always
+    # be present or the chart renders nothing.
+    y_coord: float
 
 
 class TripOut(BaseModel):

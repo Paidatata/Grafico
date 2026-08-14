@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from src import service
-from src.db import init_db
+from src.db import STATIONS_METADATA, init_db
 from src.errors import TripNotFoundError
 from src.schemas import TemplateImportStop, TemplateImportTrip
 
@@ -35,6 +35,45 @@ def test_import_template_populates_live_schedule(db_session):
     assert trip.start_time == "05:00:00"
     assert trip.end_time == "05:30:00"
     assert [s.station for s in trip.stops] == ["BFU", "LUZ", "RGS"]
+
+
+def test_live_schedule_stops_carry_station_y_coordinates(db_session):
+    """The frontend positions every polyline point and drag node via stop.y_coord.
+
+    Without it every computed SVG position is NaN and the chart renders nothing,
+    so y_coord must match the seeded `stations` table exactly.
+    """
+    init_db(db_session.get_bind())
+    service.import_template(db_session, _sample_trips())
+
+    expected = {
+        station["id"]: station["y_coordinate"]
+        for station in STATIONS_METADATA
+    }
+
+    trip = service.get_live_schedule(db_session).trips[0]
+    assert [s.y_coord for s in trip.stops] == [expected["BFU"], expected["LUZ"], expected["RGS"]]
+
+
+def test_get_trip_stops_carry_station_y_coordinates(db_session):
+    init_db(db_session.get_bind())
+    service.import_template(db_session, _sample_trips())
+
+    expected = {station["id"]: station["y_coordinate"] for station in STATIONS_METADATA}
+
+    trip = service.get_trip(db_session, "TRIP_BFU-RGS_050000")
+    assert [s.y_coord for s in trip.stops] == [expected["BFU"], expected["LUZ"], expected["RGS"]]
+
+
+def test_shift_stop_response_keeps_y_coordinates(db_session):
+    init_db(db_session.get_bind())
+    service.import_template(db_session, _sample_trips())
+
+    trip = service.shift_stop(
+        db_session, "TRIP_BFU-RGS_050000", "LUZ", "05:12:00",
+        now=datetime(2026, 8, 13, 5, 11, 0),
+    )
+    assert trip.stops[1].y_coord == 5380.32  # LUZ
 
 
 def test_import_template_replaces_previous_template(db_session):
