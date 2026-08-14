@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 from . import models
 from .errors import ChronologyViolationError, LookbackExceededError, StationNotFoundError, TripNotFoundError
 from .schemas import ScheduleOut, StopOut, TemplateImportTrip, TripOut
-from .timeutils import minutes_to_time_str, time_str_to_minutes
+from .timeutils import (
+    datetime_to_service_minutes,
+    effective_reset_date,
+    minutes_to_time_str,
+    time_str_to_minutes,
+    time_str_to_service_minutes,
+)
 
 DEFAULT_LOOKBACK_MINUTES = 15
 
@@ -51,7 +57,9 @@ def perform_daily_reset(db: Session, now: datetime | None = None) -> None:
             sequence_order=template_stop.sequence_order,
         ))
 
-    _set_setting(db, "last_reset_date", now.strftime("%Y-%m-%d"))
+    # effective_reset_date (not now.strftime) so this agrees with should_run_catchup's
+    # notion of a day: pre-03:00 still belongs to the previous reset cycle.
+    _set_setting(db, "last_reset_date", effective_reset_date(now))
     db.commit()
 
 
@@ -150,21 +158,26 @@ def shift_stop(
     target = stops[idx]
     new_minutes = time_str_to_minutes(new_time)
 
+    # Ordering and elapsed-time comparisons run in service-day minutes (from 04:00), so a
+    # trip whose stops straddle midnight stays monotonic: 00:02 sorts after 23:59, not before.
     if idx > 0:
-        upstream_minutes = time_str_to_minutes(stops[idx - 1].departure_time)
-        if new_minutes < upstream_minutes:
+        upstream_minutes = time_str_to_service_minutes(stops[idx - 1].departure_time)
+        if time_str_to_service_minutes(new_time) < upstream_minutes:
             raise ChronologyViolationError(
                 f"{new_time} is earlier than upstream stop departure {stops[idx - 1].departure_time}"
             )
 
     lookback_minutes = get_edit_lookback_minutes(db)
     current_minutes = time_str_to_minutes(target.departure_time)
-    now_minutes = now.hour * 60 + now.minute + now.second / 60
-    if (now_minutes - current_minutes) > lookback_minutes:
+    now_minutes = datetime_to_service_minutes(now)
+    if (now_minutes - time_str_to_service_minutes(target.departure_time)) > lookback_minutes:
         raise LookbackExceededError(
             f"Stop at {target.departure_time} is more than {lookback_minutes} minutes in the past"
         )
 
+    # Raw minutes are fine for the delta: it is only ever added back through
+    # minutes_to_time_str, which reduces modulo 24h, so a midnight-crossing delta
+    # (e.g. 23:55 -> 00:05 giving -1430) lands on the same clock time as +10 would.
     delta = new_minutes - current_minutes
 
     for stop in stops[idx:]:

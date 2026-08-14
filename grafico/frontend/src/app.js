@@ -55,6 +55,20 @@ function timeStrToMinutes(timeStr) {
     return h * 60 + m + (s / 60);
 }
 
+// Minutes elapsed since the service day started at START_HOUR (04:00), wrapping at 24h.
+// Mirrors backend/src/timeutils.py's time_str_to_service_minutes. Use this — never
+// timeStrToMinutes — whenever two times are compared for ordering or elapsed distance,
+// so trips that cross midnight stay monotonic (00:02 comes *after* 23:59, not before).
+function timeStrToServiceMinutes(timeStr) {
+    const raw = timeStrToMinutes(timeStr);
+    return ((raw - START_HOUR * 60) % (24 * 60) + (24 * 60)) % (24 * 60);
+}
+
+function dateToServiceMinutes(date) {
+    const raw = date.getHours() * 60 + date.getMinutes() + (date.getSeconds() / 60);
+    return ((raw - START_HOUR * 60) % (24 * 60) + (24 * 60)) % (24 * 60);
+}
+
 function minutesToTimeStr(totalMinutes) {
     const h = Math.floor(totalMinutes / 60) % 24;
     const m = Math.floor(totalMinutes % 60);
@@ -470,8 +484,11 @@ function drawTrainPaths(svg) {
                 circle.setAttribute("cy", py);
                 circle.setAttribute("r", 5);
 
-                const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
-                const stopMinutes = timeStrToMinutes(stop.time);
+                // Service-day minutes on both sides so a stop just after midnight isn't
+                // mistaken for one ~24h in the past (or the check silently bypassed).
+                // Matches the server-side lookback check in service.py:shift_stop.
+                const nowMinutes = dateToServiceMinutes(new Date());
+                const stopMinutes = timeStrToServiceMinutes(stop.time);
                 const isLocked = (nowMinutes - stopMinutes) > appState.editLookbackMinutes;
 
                 circle.className.baseVal = isLocked ? "time-node locked" : "time-node";

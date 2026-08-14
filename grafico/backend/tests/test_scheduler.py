@@ -17,6 +17,33 @@ def test_should_run_catchup_when_reset_yesterday():
     assert should_run_catchup("2026-08-12", datetime(2026, 8, 13, 9, 0, 0)) is True
 
 
+def test_no_catchup_on_restart_before_3am_after_yesterdays_reset():
+    """A 02:00 restart is still inside the 2026-08-13 service day.
+
+    Yesterday's 03:00 job already ran (last_reset_date == "2026-08-13"), so no
+    reset may fire an hour early and wipe live edits on overnight trips.
+    """
+    assert should_run_catchup("2026-08-13", datetime(2026, 8, 14, 2, 0, 0)) is False
+
+
+def test_catchup_on_restart_at_4am_without_a_reset_for_the_new_day():
+    assert should_run_catchup("2026-08-13", datetime(2026, 8, 14, 4, 0, 0)) is True
+
+
+def test_catchup_agrees_with_the_date_perform_daily_reset_writes(db_session):
+    """should_run_catchup and perform_daily_reset must share one definition of "day"."""
+    init_db(db_session.get_bind())
+    reset_at = datetime(2026, 8, 14, 3, 0, 0)
+    service.perform_daily_reset(db_session, now=reset_at)
+
+    stored = service.get_last_reset_date(db_session)
+    assert stored == "2026-08-14"
+    # Later the same service day (including past midnight into 2026-08-15 02:00): no re-run.
+    assert should_run_catchup(stored, datetime(2026, 8, 14, 23, 0, 0)) is False
+    assert should_run_catchup(stored, datetime(2026, 8, 15, 1, 30, 0)) is False
+    assert should_run_catchup(stored, datetime(2026, 8, 15, 3, 30, 0)) is True
+
+
 def test_startup_catchup_resets_when_stale(db_session):
     from src.schemas import TemplateImportStop, TemplateImportTrip
 
