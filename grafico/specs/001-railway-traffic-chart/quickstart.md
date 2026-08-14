@@ -40,12 +40,18 @@ It should match the [JSON Intermediate Schema](data-model.md#2-intermediate-json
 
 ---
 
-## 3. Launch Frontend Time-Distance Graphic
+## 3. Start the Backend Server
 
-1. Navigate to the `frontend/` directory.
-2. Open `src/index.html` in a web browser.
-3. Select the generated `schedule.json` file via the file upload input.
-4. Verify that:
-   - The time-distance grid is displayed showing stations on the vertical axis and times (00:00 to 24:00) on the horizontal axis.
-   - Train lines are plotted (dashed lines for planned schedule).
-   - Clicking and dragging any station node on the chart shifts the time and propagates the delay to all subsequent station stops.
+```bash
+pip install -r backend/requirements.txt
+uvicorn backend.src.app:app --reload --host 0.0.0.0 --port 8000
+```
+
+The server creates `backend/data/railway.db` on first run and seeds it with station data.
+
+## 4. Import the Schedule and Open the Chart
+
+1. Open `http://<server-host>:8000/` in a browser (any machine on the network, not just the server itself).
+2. Click **"Importar JSON"** and select `backend/data/schedule.json` (generated in step 1). This uploads it as the day's template baseline via `POST /api/template/import`, which also populates today's live schedule.
+3. Verify the time-distance grid renders with stations on the vertical axis and times on the horizontal axis, with train lines plotted as dashed lines.
+4. Drag a station node — the dragged node and every downstream stop on that trip shift by the same amount, computed and persisted by the backend. Open the page in a second browser tab (or from another machine) to see the edit appear there live over the WebSocket connection.
