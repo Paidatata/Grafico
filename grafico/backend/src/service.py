@@ -143,3 +143,25 @@ def shift_stop(
 
     db.commit()
     return get_trip(db, trip_id)
+
+
+def reset_trip(db: Session, trip_id: str) -> TripOut:
+    template_stops = (
+        db.query(models.TemplatePlannedStop)
+        .filter(models.TemplatePlannedStop.trip_id == trip_id)
+        .order_by(models.TemplatePlannedStop.sequence_order)
+        .all()
+    )
+    if not template_stops:
+        raise TripNotFoundError(trip_id)
+
+    live_stops = {stop.station_id: stop for stop in _trip_stops(db, trip_id)}
+    for template_stop in template_stops:
+        live_stop = live_stops.get(template_stop.station_id)
+        if live_stop is not None:
+            live_stop.arrival_time = template_stop.arrival_time
+            live_stop.departure_time = template_stop.departure_time
+            live_stop.sequence_order = template_stop.sequence_order
+
+    db.commit()
+    return get_trip(db, trip_id)
