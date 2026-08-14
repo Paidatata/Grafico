@@ -141,7 +141,9 @@ let appState = {
     showRealized: false,
     realizedTrips: [],  // Compare track data
     dragNode: null,     // Reference to node currently being dragged
-    editLookbackMinutes: 15  // Sane default before the server value loads
+    editLookbackMinutes: 15,  // Sane default before the server value loads
+    // Set when a live update arrives mid-drag; drained once the gesture commits.
+    pendingRerender: false
 };
 
 // Predefined mock realized (actual) data for comparison
@@ -202,22 +204,45 @@ function applyTripUpdate(updatedTrip) {
     renderApp();
 }
 
+// Refetch the authoritative schedule and redraw. Shared by the schedule_reset handler,
+// the drag-rejection recovery path, and the post-drag drain of deferred live updates.
+function reloadScheduleFromServer() {
+    return fetch("/api/schedule")
+        .then(response => {
+            if (!response.ok) throw new Error("Server returned " + response.status);
+            return response.json();
+        })
+        .then(data => {
+            appState.trips = data.trips;
+            renderApp();
+        })
+        .catch(err => {
+            console.error("Could not refresh the schedule from the server.", err);
+        });
+}
+
 function connectLiveUpdates() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
     socket.onmessage = (event) => {
         const message = JSON.parse(event.data);
+        if (message.type !== "trip_updated" && message.type !== "schedule_reset") return;
+
+        // Any re-render rebuilds the entire SVG, detaching the circle element the active
+        // drag holds in dragNode.element along with the listeners bound to the old SVG —
+        // the gesture then visually jumps out from under the dispatcher. So defer *every*
+        // update while a drag is in flight, not just ones for the trip being dragged, and
+        // reconcile with the server once the gesture's own round-trip completes.
+        if (appState.dragNode) {
+            appState.pendingRerender = true;
+            return;
+        }
+
         if (message.type === "trip_updated") {
-            if (appState.dragNode && appState.dragNode.tripId === message.trip.trip_id) return;
             applyTripUpdate(message.trip);
-        } else if (message.type === "schedule_reset") {
-            fetch("/api/schedule")
-                .then(response => response.json())
-                .then(data => {
-                    appState.trips = data.trips;
-                    renderApp();
-                });
+        } else {
+            reloadScheduleFromServer();
         }
     };
 
@@ -625,12 +650,17 @@ function onNodeDragEnd(e) {
         })
         .catch(err => {
             alert("Edição rejeitada pelo servidor: " + err.message);
-            fetch("/api/schedule")
-                .then(response => response.json())
-                .then(data => {
-                    appState.trips = data.trips;
-                    renderApp();
-                });
+            // This reload already reconciles with the server, so nothing is left to drain.
+            appState.pendingRerender = false;
+            return reloadScheduleFromServer();
+        })
+        .finally(() => {
+            // Other dispatchers' updates that arrived mid-gesture were held back; now that
+            // this drag has committed, take the server's current state for everything.
+            if (appState.pendingRerender) {
+                appState.pendingRerender = false;
+                reloadScheduleFromServer();
+            }
         });
 
     appState.dragNode = null;
