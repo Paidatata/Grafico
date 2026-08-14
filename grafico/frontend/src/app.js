@@ -123,46 +123,12 @@ function dxfYToSvg(y, lineType) {
 let appState = {
     selectedLine: "Line 10",
     trips: [],          // Working trips data
-    originalTrips: [],  // Original backup for resets
     selectedTripId: null,
     showRealized: false,
     realizedTrips: [],  // Compare track data
-    dragNode: null      // Reference to node currently being dragged
+    dragNode: null,     // Reference to node currently being dragged
+    editLookbackMinutes: 15  // Sane default before the server value loads
 };
-
-// Fallback schedule data in case file fetch fails (Offline support)
-const fallbackSchedule = [
-    {
-        "trip_id": "TRIP_BFU-RGS_0500",
-        "direction": "BFU-RGS",
-        "start_time": "05:00:00",
-        "end_time": "05:55:00",
-        "stops": [
-            {"station": "BFU", "time": "05:00:00", "x_coord": 6000.0, "y_coord": 5860.32},
-            {"station": "LUZ", "time": "05:08:00", "x_coord": 6160.0, "y_coord": 5380.32},
-            {"station": "BAS", "time": "05:12:00", "x_coord": 6240.0, "y_coord": 4980.32},
-            {"station": "SCS", "time": "05:25:00", "x_coord": 6500.0, "y_coord": 3860.32},
-            {"station": "SAN", "time": "05:35:00", "x_coord": 6700.0, "y_coord": 2980.32},
-            {"station": "MAU", "time": "05:43:00", "x_coord": 6860.0, "y_coord": 2100.32},
-            {"station": "RGS", "time": "05:55:00", "x_coord": 7100.0, "y_coord": 500.32}
-        ]
-    },
-    {
-        "trip_id": "TRIP_RGS-BFU_0515",
-        "direction": "RGS-BFU",
-        "start_time": "05:15:00",
-        "end_time": "06:10:00",
-        "stops": [
-            {"station": "RGS", "time": "05:15:00", "x_coord": 6300.0, "y_coord": 500.32},
-            {"station": "MAU", "time": "05:27:00", "x_coord": 6540.0, "y_coord": 2100.32},
-            {"station": "SAN", "time": "05:35:00", "x_coord": 6700.0, "y_coord": 2980.32},
-            {"station": "SCS", "time": "05:45:00", "x_coord": 6900.0, "y_coord": 3860.32},
-            {"station": "BAS", "time": "05:58:00", "x_coord": 7160.0, "y_coord": 4980.32},
-            {"station": "LUZ", "time": "06:02:00", "x_coord": 7240.0, "y_coord": 5380.32},
-            {"station": "BFU", "time": "06:10:00", "x_coord": 7400.0, "y_coord": 5860.32}
-        ]
-    }
-];
 
 // Predefined mock realized (actual) data for comparison
 const mockRealizedData = [
@@ -189,40 +155,103 @@ window.onload = function() {
 };
 
 function loadDefaultSchedule() {
-    // Attempt to fetch schedule.json relative to the page location
-    fetch("../data/schedule.json")
+    fetch("/api/schedule")
         .then(response => {
-            if (!response.ok) throw new Error("File not found");
+            if (!response.ok) throw new Error("Server returned " + response.status);
             return response.json();
         })
         .then(data => {
-            initSchedule(data);
+            initSchedule(data.trips);
+            connectLiveUpdates();
+            loadLookbackSetting();
         })
         .catch(err => {
-            console.warn("Could not load schedule.json via fetch (normal for local file:// opening). Using fallback mock schedule.", err);
-            initSchedule(fallbackSchedule);
+            console.error("Could not reach the schedule server.", err);
+            document.getElementById("chart-container").innerHTML =
+                '<p style="padding: 40px; color: var(--text-secondary);">Não foi possível conectar ao servidor. Verifique se o backend está rodando.</p>';
         });
 }
 
 function initSchedule(data) {
     appState.trips = JSON.parse(JSON.stringify(data)); // Deep clone
-    appState.originalTrips = JSON.parse(JSON.stringify(data));
-    
+
     renderApp();
+}
+
+function applyTripUpdate(updatedTrip) {
+    const idx = appState.trips.findIndex(t => t.trip_id === updatedTrip.trip_id);
+    if (idx >= 0) {
+        appState.trips[idx] = updatedTrip;
+    } else {
+        appState.trips.push(updatedTrip);
+    }
+    renderApp();
+}
+
+function connectLiveUpdates() {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+    socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === "trip_updated") {
+            if (appState.dragNode && appState.dragNode.tripId === message.trip.trip_id) return;
+            applyTripUpdate(message.trip);
+        } else if (message.type === "schedule_reset") {
+            fetch("/api/schedule")
+                .then(response => response.json())
+                .then(data => {
+                    appState.trips = data.trips;
+                    renderApp();
+                });
+        }
+    };
+
+    socket.onclose = () => {
+        setTimeout(connectLiveUpdates, 3000);
+    };
+}
+
+function loadLookbackSetting() {
+    fetch("/api/settings/edit-lookback-minutes")
+        .then(response => response.json())
+        .then(data => {
+            appState.editLookbackMinutes = data.edit_lookback_minutes;
+        });
 }
 
 function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
     reader.onload = function(e) {
+        let data;
         try {
-            const data = JSON.parse(e.target.result);
-            initSchedule(data);
+            data = JSON.parse(e.target.result);
         } catch (err) {
             alert("Erro ao ler JSON: Formato inválido.");
+            return;
         }
+
+        fetch("/api/template/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+        })
+            .then(response => {
+                if (!response.ok) throw new Error("Import failed: " + response.status);
+                return response.json();
+            })
+            .then(() => fetch("/api/schedule"))
+            .then(response => response.json())
+            .then(scheduleData => {
+                initSchedule(scheduleData.trips);
+                alert(`Grade padrão importada com sucesso.`);
+            })
+            .catch(err => {
+                alert("Não foi possível importar a grade: " + err.message);
+            });
     };
     reader.readAsText(file);
 }
@@ -440,10 +469,15 @@ function drawTrainPaths(svg) {
                 circle.setAttribute("cx", px);
                 circle.setAttribute("cy", py);
                 circle.setAttribute("r", 5);
-                circle.className.baseVal = "time-node";
-                
-                // Add drag events
-                circle.addEventListener("mousedown", (e) => onNodeDragStart(e, trip.trip_id, stopIdx));
+
+                const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+                const stopMinutes = timeStrToMinutes(stop.time);
+                const isLocked = (nowMinutes - stopMinutes) > appState.editLookbackMinutes;
+
+                circle.className.baseVal = isLocked ? "time-node locked" : "time-node";
+                if (!isLocked) {
+                    circle.addEventListener("mousedown", (e) => onNodeDragStart(e, trip.trip_id, stopIdx));
+                }
                 circle.addEventListener("mouseover", (e) => showNodeTooltip(e, stop, trip));
                 circle.addEventListener("mouseout", hideTooltip);
                 
@@ -488,6 +522,9 @@ function onNodeDragStart(e, tripId, stopIdx) {
         stopIdx: stopIdx,
         originalX: timeToX(trip.stops[stopIdx].time),
         originalTimeMinutes: timeStrToMinutes(trip.stops[stopIdx].time),
+        // Snapshot of this trip's stop times before the drag began, used to compute
+        // downstream propagation deltas during the gesture (server is authoritative on release).
+        dragStartStops: JSON.parse(JSON.stringify(trip.stops)),
         element: e.target
     };
     
@@ -520,10 +557,10 @@ function onNodeDrag(e) {
     
     // Propagate time delta (+D minutes) to all downstream stops
     for (let i = stopIdx + 1; i < trip.stops.length; i++) {
-        // Load original stops reference
-        const originalTrip = appState.originalTrips.find(t => t.trip_id === appState.dragNode.tripId);
-        const originalTime = timeStrToMinutes(originalTrip.stops[i].time);
-        
+        // Load pre-drag stop reference (captured at drag start, since originalTrips no
+        // longer exists now that the server is the source of truth after each commit)
+        const originalTime = timeStrToMinutes(appState.dragNode.dragStartStops[i].time);
+
         // Propagate forward
         const updatedTimeMinutes = originalTime + deltaMinutes;
         const updatedTimeStr = minutesToTimeStr(updatedTimeMinutes);
@@ -549,13 +586,38 @@ function onNodeDrag(e) {
 
 function onNodeDragEnd(e) {
     if (!appState.dragNode) return;
-    
-    appState.dragNode.element.classList.remove("dragging");
+
+    const { tripId, stopIdx, element } = appState.dragNode;
+    element.classList.remove("dragging");
+
+    const trip = appState.trips.find(t => t.trip_id === tripId);
+    const stationId = trip.stops[stopIdx].station;
+    const newTime = trip.stops[stopIdx].time;
+
+    fetch("/api/stops/shift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trip_id: tripId, station_id: stationId, new_time: newTime }),
+    })
+        .then(response => {
+            if (!response.ok) return response.json().then(body => Promise.reject(new Error(body.detail)));
+            return response.json();
+        })
+        .then(updatedTrip => {
+            applyTripUpdate(updatedTrip);
+        })
+        .catch(err => {
+            alert("Edição rejeitada pelo servidor: " + err.message);
+            fetch("/api/schedule")
+                .then(response => response.json())
+                .then(data => {
+                    appState.trips = data.trips;
+                    renderApp();
+                });
+        });
+
     appState.dragNode = null;
     hideTooltip();
-    
-    // Rerender side list to reflect new times
-    renderTrainList();
 }
 
 function updateSvgVisuals(trip) {
@@ -648,10 +710,23 @@ function loadMockRealizedData() {
 }
 
 function resetToOriginal() {
-    if (confirm("Deseja reverter todas as alterações e carregar a grade original?")) {
-        appState.trips = JSON.parse(JSON.stringify(appState.originalTrips));
-        renderApp();
+    if (!appState.selectedTripId) {
+        alert("Selecione um trem para resetar.");
+        return;
     }
+    if (!confirm("Deseja reverter este trem para a grade padrão?")) return;
+
+    fetch(`/api/trips/${encodeURIComponent(appState.selectedTripId)}/reset`, { method: "POST" })
+        .then(response => {
+            if (!response.ok) throw new Error("Reset failed: " + response.status);
+            return response.json();
+        })
+        .then(updatedTrip => {
+            applyTripUpdate(updatedTrip);
+        })
+        .catch(err => {
+            alert("Não foi possível resetar o trem: " + err.message);
+        });
 }
 
 function exportData() {

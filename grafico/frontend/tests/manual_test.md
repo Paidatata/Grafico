@@ -43,3 +43,21 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 1. Clique no botão **"Mostrar Realizado"** na barra lateral.
 2. Confirme que linhas vermelhas contínuas aparecem no gráfico representando a circulação real/realizada.
 3. Compare visualmente a distância entre a linha tracejada (planejada) e a vermelha (realizada) para estimar os desvios.
+
+## Cenário 5: Sincronização em Tempo Real Entre Despachantes
+
+1. Abra `http://<servidor>:8000/` em duas abas (ou dois navegadores/máquinas diferentes).
+2. Na aba A, arraste um nó de horário e solte.
+3. Confirme que a aba B reflete a mesma alteração em até poucos segundos, sem precisar recarregar a página.
+
+## Cenário 6: Janela de Retroação (Lookback)
+
+1. Localize um trem com uma parada cujo horário já passou há mais tempo que o valor configurado em "edit_lookback_minutes" (15 minutos por padrão).
+2. Confirme que o nó dessa parada aparece acinzentado e não é arrastável (cursor "not-allowed").
+3. Confirme que paradas dentro da janela permitida continuam arrastáveis normalmente.
+
+## Cenário 7: Servidor Indisponível
+
+1. Pare o processo do backend (`uvicorn`).
+2. Recarregue a página do gráfico.
+3. Confirme que uma mensagem clara de erro de conexão aparece, em vez de silenciosamente carregar dados fictícios.
