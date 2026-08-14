@@ -49,6 +49,8 @@ uvicorn backend.src.app:app --reload --host 0.0.0.0 --port 8000
 
 The server creates `backend/data/railway.db` on first run and seeds it with station data.
 
+> **Network exposure:** `--host 0.0.0.0` publishes the API to everyone on the network, and there is no authentication in this phase (by design) — so anyone who can reach the port can call `POST /api/template/import` (replaces the entire baseline schedule) or `PUT /api/settings/edit-lookback-minutes` (can disable all editing). That is acceptable on a trusted dispatcher LAN; bind to `127.0.0.1` instead if the host sits on an untrusted network.
+
 ## 4. Import the Schedule and Open the Chart
 
 1. Open `http://<server-host>:8000/` in a browser (any machine on the network, not just the server itself).

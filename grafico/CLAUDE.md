@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A time-distance (Marey) chart for CPTM railway Line 710 (São Paulo) train schedules. A Python CLI parses train schedule geometry out of an AutoCAD DXF drawing into JSON; a static vanilla-JS/SVG frontend renders the planned schedule as an interactive chart where dispatchers can drag station-time nodes and see the delay propagate downstream.
 
-There is no build system, package manager, or server. Two independent pieces:
+There is no build system or frontend toolchain, but there *is* a server: a FastAPI backend with pip dependencies (`backend/requirements.txt`) that owns the schedule state in SQLite and serves the frontend. Two pieces:
 
-- `backend/` — Python 3 standard-library-only scripts (DXF parser + SQLite seeder)
-- `frontend/` — a single static HTML/CSS/JS page, opened directly in a browser
+- `backend/` — a FastAPI + SQLAlchemy app (REST + WebSocket API over SQLite), plus a standard-library-only DXF parser script
+- `frontend/` — a single static HTML/CSS/JS page (no framework, no modules), served by the backend at `http://localhost:8000/`
 
 ## Commands
 
