@@ -1338,7 +1338,10 @@ def test_startup_catchup_resets_when_stale(db_session):
             stops=[TemplateImportStop(station="BFU", time="05:00:00")],
         )
     ])
-    service.shift_stop(db_session, "TRIP_BFU-RGS_050000", "BFU", "05:20:00")
+    service.shift_stop(
+        db_session, "TRIP_BFU-RGS_050000", "BFU", "05:20:00",
+        now=datetime(2026, 8, 13, 5, 10, 0),
+    )
 
     run_startup_catchup_if_needed(db_session, now=datetime(2026, 8, 14, 9, 0, 0))
 
