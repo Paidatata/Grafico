@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime
+
+import pytest
 
 from src import service
 from src.db import init_db
-from src.scheduler import run_startup_catchup_if_needed, should_run_catchup
+from src.scheduler import run_daily_reset_job, run_startup_catchup_if_needed, should_run_catchup
 
 
 def test_should_run_catchup_when_never_reset():
@@ -42,6 +45,21 @@ def test_catchup_agrees_with_the_date_perform_daily_reset_writes(db_session):
     assert should_run_catchup(stored, datetime(2026, 8, 14, 23, 0, 0)) is False
     assert should_run_catchup(stored, datetime(2026, 8, 15, 1, 30, 0)) is False
     assert should_run_catchup(stored, datetime(2026, 8, 15, 3, 30, 0)) is True
+
+
+def test_daily_reset_job_logs_and_reraises_on_failure(monkeypatch, caplog):
+    """APScheduler swallows job exceptions, so the failure must at least reach the log."""
+    def _boom(*args, **kwargs):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr("src.service.perform_daily_reset", _boom)
+
+    with caplog.at_level(logging.ERROR, logger="src.scheduler"):
+        with pytest.raises(RuntimeError):
+            run_daily_reset_job()
+
+    assert "Daily schedule reset failed" in caplog.text
+    assert "database is locked" in caplog.text  # traceback captured via logger.exception
 
 
 def test_startup_catchup_resets_when_stale(db_session):
