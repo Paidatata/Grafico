@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,10 @@ class StopOut(BaseModel):
 class TripOut(BaseModel):
     trip_id: str
     direction: str
+    # Field code (e.g. "P15", "R2", "M4") — see parser.py's compute_train_codes for
+    # the destination/parity convention. This, not trip_id, is what dispatchers
+    # recognize; the frontend displays it instead of the internal trip_id.
+    train_code: str
     start_time: str
     end_time: str
     stops: List[StopOut]
@@ -34,6 +38,9 @@ class TemplateImportStop(BaseModel):
 class TemplateImportTrip(BaseModel):
     trip_id: str
     direction: str
+    # Optional so existing/ad-hoc payloads that omit it still import (service.py
+    # falls back to deriving one from trip_id). parser.py's output always sets it.
+    train_code: Optional[str] = None
     stops: List[TemplateImportStop]
 
 

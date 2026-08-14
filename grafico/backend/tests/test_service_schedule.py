@@ -37,6 +37,34 @@ def test_import_template_populates_live_schedule(db_session):
     assert [s.station for s in trip.stops] == ["BFU", "LUZ", "RGS"]
 
 
+def test_import_preserves_the_parser_provided_train_code(db_session):
+    init_db(db_session.get_bind())
+    trips = [
+        TemplateImportTrip(
+            trip_id="TRIP_BFU-RGS_050000",
+            direction="BFU-RGS",
+            train_code="P15",
+            stops=[TemplateImportStop(station="BFU", time="05:00:00")],
+        )
+    ]
+
+    service.import_template(db_session, trips)
+
+    trip = service.get_trip(db_session, "TRIP_BFU-RGS_050000")
+    assert trip.train_code == "P15"
+
+
+def test_import_without_train_code_falls_back_to_deriving_from_trip_id(db_session):
+    # Ad-hoc payloads that predate the train_code field (or are hand-authored in
+    # tests) must still import instead of failing validation.
+    init_db(db_session.get_bind())
+
+    service.import_template(db_session, _sample_trips())
+
+    trip = service.get_trip(db_session, "TRIP_BFU-RGS_050000")
+    assert trip.train_code == "050000"
+
+
 def test_live_schedule_stops_carry_station_y_coordinates(db_session):
     """The frontend positions every polyline point and drag node via stop.y_coord.
 

@@ -334,7 +334,7 @@ function renderTrainList() {
         
         li.innerHTML = `
             <div class="train-info">
-                <span class="train-code-label">${trip.trip_id.split('_').slice(-2).join(' ')}</span>
+                <span class="train-code-label">${trip.train_code}</span>
                 <span class="train-route-label">${startStation} ➔ ${endStation} (${trip.direction})</span>
             </div>
             <span class="train-time-label">${trip.start_time.substring(0, 5)}</span>
@@ -638,7 +638,7 @@ function onNodeDrag(e) {
     
     // Update tooltip
     updateTooltipPosition(e.clientX, e.clientY, `
-        <strong>Trem:</strong> ${trip.trip_id.split('_').slice(-2).join(' ')}<br>
+        <strong>Trem:</strong> ${trip.train_code}<br>
         <strong>Estação:</strong> ${trip.stops[stopIdx].station}<br>
         <strong>Novo Horário:</strong> ${newTimeStr.substring(0, 5)} (${deltaMinutes >= 0 ? '+' : ''}${Math.round(deltaMinutes)} min)
     `);
@@ -712,7 +712,7 @@ function updateSvgVisuals(trip) {
 // ==========================================================================
 function showTripTooltip(e, trip) {
     const text = `
-        <strong>Trem:</strong> ${trip.trip_id.split('_').slice(-2).join(' ')}<br>
+        <strong>Trem:</strong> ${trip.train_code}<br>
         <strong>Partida:</strong> ${trip.start_time.substring(0, 5)} (${trip.stops[0].station})<br>
         <strong>Chegada:</strong> ${trip.end_time.substring(0, 5)} (${trip.stops[trip.stops.length-1].station})
     `;
@@ -721,7 +721,7 @@ function showTripTooltip(e, trip) {
 
 function showNodeTooltip(e, stop, trip) {
     const text = `
-        <strong>Trem:</strong> ${trip.trip_id.split('_').slice(-2).join(' ')}<br>
+        <strong>Trem:</strong> ${trip.train_code}<br>
         <strong>Estação:</strong> ${stop.station}<br>
         <strong>Horário:</strong> ${stop.time.substring(0, 5)}
     `;

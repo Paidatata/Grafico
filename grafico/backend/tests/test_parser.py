@@ -5,7 +5,7 @@ import sys
 # Add backend/src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
-from parser import coord_to_time, disambiguate_trip_ids, get_station_code
+from parser import coord_to_time, compute_train_codes, disambiguate_trip_ids, get_station_code
 
 class TestParserConversions(unittest.TestCase):
     
@@ -70,6 +70,73 @@ class TestDisambiguateTripIds(unittest.TestCase):
         disambiguate_trip_ids(trips)
         ids = [t["trip_id"] for t in trips]
         self.assertEqual(len(ids), len(set(ids)))
+
+
+def _trip(start_time, origin_station, origin_y, dest_station, dest_y):
+    return {
+        "start_time": start_time,
+        "stops": [
+            {"station": origin_station, "y_coord": origin_y},
+            {"station": dest_station, "y_coord": dest_y},
+        ],
+    }
+
+
+class TestComputeTrainCodes(unittest.TestCase):
+
+    def test_bfu_destination_gets_odd_p_codes_in_departure_order(self):
+        trips = [
+            _trip("05:00:00", "RGS", 500.32, "BFU", 5860.32),
+            _trip("04:30:00", "RGS", 500.32, "BFU", 5860.32),
+        ]
+        compute_train_codes(trips)
+        # Earlier departure (04:30) gets the smaller odd number, regardless of list order.
+        codes_by_start = {t["start_time"]: t["train_code"] for t in trips}
+        self.assertEqual(codes_by_start["04:30:00"], "P1")
+        self.assertEqual(codes_by_start["05:00:00"], "P3")
+
+    def test_rgs_destination_gets_even_r_codes(self):
+        trips = [
+            _trip("04:30:00", "BFU", 5860.32, "RGS", 500.32),
+            _trip("05:00:00", "BFU", 5860.32, "RGS", 500.32),
+        ]
+        compute_train_codes(trips)
+        self.assertEqual(trips[0]["train_code"], "R2")
+        self.assertEqual(trips[1]["train_code"], "R4")
+
+    def test_mau_destination_gets_even_m_codes(self):
+        trips = [_trip("04:30:00", "BFU", 5860.32, "MAU", 2100.32)]
+        compute_train_codes(trips)
+        self.assertEqual(trips[0]["train_code"], "M2")
+
+    def test_rgs_and_mau_share_one_even_sequence(self):
+        # Same start_time is fine here (different destinations don't collide);
+        # ordering between them then falls to the y-distance tiebreak.
+        trips = [
+            _trip("04:30:00", "BFU", 5860.32, "MAU", 2100.32),   # shorter route
+            _trip("04:30:00", "BFU", 5860.32, "RGS", 500.32),    # longer route
+            _trip("05:00:00", "BFU", 5860.32, "RGS", 500.32),
+        ]
+        compute_train_codes(trips)
+        codes = sorted(t["train_code"] for t in trips)
+        self.assertEqual(codes, ["M2", "R4", "R6"])
+
+    def test_same_start_time_breaks_tie_by_geographic_proximity_to_destination(self):
+        # Reproduces the real collision: two RGS-BFU trips both starting 04:37:00,
+        # one from SAN (closer to BFU) and one from MAU (farther from BFU).
+        trips = [
+            _trip("04:37:00", "MAU", 2100.32, "BFU", 5860.32),  # farther -> larger number
+            _trip("04:37:00", "SAN", 2980.32, "BFU", 5860.32),  # closer -> smaller number
+        ]
+        compute_train_codes(trips)
+        codes_by_origin = {t["stops"][0]["station"]: t["train_code"] for t in trips}
+        self.assertEqual(codes_by_origin["SAN"], "P1")
+        self.assertEqual(codes_by_origin["MAU"], "P3")
+
+    def test_raises_on_unknown_destination(self):
+        trips = [_trip("04:30:00", "BFU", 5860.32, "LUZ", 5380.32)]
+        with self.assertRaises(ValueError):
+            compute_train_codes(trips)
 
 
 if __name__ == "__main__":

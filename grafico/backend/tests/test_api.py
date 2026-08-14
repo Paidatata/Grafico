@@ -48,6 +48,26 @@ def test_import_then_get_schedule(app_client):
     assert trips[0]["trip_id"] == "TRIP_BFU-RGS_050000"
 
 
+def test_import_then_get_schedule_carries_parser_train_code(app_client):
+    # train_code is what the frontend displays instead of the internal trip_id
+    # (see parser.py's compute_train_codes for the P/R/M field convention).
+    payload = [
+        {
+            "trip_id": "TRIP_RGS-BFU_043700",
+            "direction": "RGS-BFU",
+            "train_code": "P15",
+            "stops": [
+                {"station": "SAN", "time": "04:37:00"},
+                {"station": "BFU", "time": "05:00:00"},
+            ],
+        }
+    ]
+    app_client.post("/api/template/import", json=payload)
+
+    trips = app_client.get("/api/schedule").json()["trips"]
+    assert trips[0]["train_code"] == "P15"
+
+
 def test_shift_stop_endpoint_propagates_downstream(app_client, monkeypatch):
     _freeze_service_now(monkeypatch, datetime(2026, 8, 13, 5, 0, 0))
     payload = [

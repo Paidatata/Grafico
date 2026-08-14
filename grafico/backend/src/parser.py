@@ -109,6 +109,7 @@ def parse_dxf_schedule():
         process_trip(current_entity, trips)
 
     disambiguate_trip_ids(trips)
+    compute_train_codes(trips)
 
     # Save to JSON
     with open(output_path, 'w', encoding='utf-8') as out_f:
@@ -165,6 +166,57 @@ def disambiguate_trip_ids(trips):
         seen_counts[base_id] = occurrence
         if occurrence > 1:
             trip["trip_id"] = f"{base_id}_{occurrence}"
+    return trips
+
+# Real-world CPTM Line 710 field convention: trains are numbered by direction,
+# not by a raw sequential counter. Trains terminating at Barra Funda get an
+# odd-increasing "P" code; trains terminating at Rio Grande da Serra or at
+# Mauá (a shorter turn-back service) share one even-increasing sequence,
+# prefixed "R" or "M" by their own destination. Extend this table — not the
+# fallback below — if a future DXF introduces another destination.
+ODD_DESTINATION_PREFIXES = {"BFU": "P"}
+EVEN_DESTINATION_PREFIXES = {"RGS": "R", "MAU": "M"}
+
+def compute_train_codes(trips):
+    # Numbers increase through the day by departure time. Two trips can share
+    # an exact departure time (see disambiguate_trip_ids) when one starts
+    # partway down the line instead of at the terminal — in that case the one
+    # whose origin is geographically closer to the destination (shorter DXF Y
+    # distance, i.e. shorter route) gets the smaller number.
+    def sort_key(trip):
+        origin_y = trip["stops"][0]["y_coord"]
+        destination_y = trip["stops"][-1]["y_coord"]
+        return (trip["start_time"], abs(origin_y - destination_y))
+
+    def destination_of(trip):
+        return trip["stops"][-1]["station"]
+
+    odd_group = sorted(
+        (t for t in trips if destination_of(t) in ODD_DESTINATION_PREFIXES),
+        key=sort_key,
+    )
+    for i, trip in enumerate(odd_group):
+        number = 2 * i + 1
+        trip["train_code"] = f"{ODD_DESTINATION_PREFIXES[destination_of(trip)]}{number}"
+
+    even_group = sorted(
+        (t for t in trips if destination_of(t) in EVEN_DESTINATION_PREFIXES),
+        key=sort_key,
+    )
+    for i, trip in enumerate(even_group):
+        number = 2 * (i + 1)
+        trip["train_code"] = f"{EVEN_DESTINATION_PREFIXES[destination_of(trip)]}{number}"
+
+    unassigned = [t for t in trips if "train_code" not in t]
+    if unassigned:
+        destinations = sorted({destination_of(t) for t in unassigned})
+        raise ValueError(
+            f"compute_train_codes: {len(unassigned)} trip(s) terminate at a "
+            f"destination outside the known P/R/M scheme ({destinations}). "
+            "Add it to ODD_DESTINATION_PREFIXES or EVEN_DESTINATION_PREFIXES "
+            "before regenerating schedule.json."
+        )
+
     return trips
 
 if __name__ == "__main__":

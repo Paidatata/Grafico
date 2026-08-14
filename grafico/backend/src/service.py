@@ -60,7 +60,7 @@ def import_template(db: Session, trips: list[TemplateImportTrip]) -> int:
     db.query(models.TemplateTrip).delete()
 
     for trip in trips:
-        train_code = trip.trip_id.split("_")[-1]
+        train_code = trip.train_code or trip.trip_id.split("_")[-1]
         db.add(models.TemplateTrip(
             id=trip.trip_id, train_code=train_code, direction=trip.direction, line="Line 710",
         ))
@@ -144,6 +144,7 @@ def _trip_to_out(
     return TripOut(
         trip_id=trip.id,
         direction=trip.direction,
+        train_code=trip.train_code,
         start_time=stops[0].departure_time,
         end_time=stops[-1].departure_time,
         stops=[
