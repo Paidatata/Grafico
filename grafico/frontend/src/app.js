@@ -228,6 +228,7 @@ const mockRealizedData = [
 // Initialization & Loading Logic
 // ==========================================================================
 window.onload = function() {
+    syncThemeIcon();
     loadDefaultSchedule();
     document.getElementById("chart-container").addEventListener("scroll", onChartScroll);
 };
@@ -575,10 +576,12 @@ function drawTrainPaths(svg) {
         polyline.setAttribute("id", `line-${trip.trip_id}`);
         polyline.className.baseVal = `train-path-planned ${isSelected ? 'highlighted' : ''}`;
 
-        // Show tooltip and per-node labels on hover
-        polyline.addEventListener("mouseover", (e) => {
-            showTripTooltip(e, trip);
+        // Per-node labels on hover; tooltip tracks mouse dynamically
+        polyline.addEventListener("mouseover", () => {
             showHoverNodeLabels(trip);
+        });
+        polyline.addEventListener("mousemove", (e) => {
+            showTripTooltipDynamic(e, trip);
         });
         polyline.addEventListener("mouseout", () => {
             hideTooltip();
@@ -839,6 +842,28 @@ function showTripTooltip(e, trip) {
     updateTooltipPosition(e.clientX, e.clientY, text);
 }
 
+function showTripTooltipDynamic(e, trip) {
+    const container = document.getElementById("chart-container");
+    const rect = container.getBoundingClientRect();
+    const svgX = e.clientX - rect.left + container.scrollLeft;
+    const svgY = e.clientY - rect.top + container.scrollTop;
+
+    const timeAtMouse = xToTime(svgX).substring(0, 5);
+
+    const nearestStop = trip.stops.reduce((best, stop) => {
+        const stopY = dxfYToSvg(stop.y_coord, appState.selectedLine);
+        const bestY = dxfYToSvg(best.y_coord, appState.selectedLine);
+        return Math.abs(svgY - stopY) < Math.abs(svgY - bestY) ? stop : best;
+    }, trip.stops[0]);
+
+    const text = `
+        <strong>Trem:</strong> ${trip.train_code}<br>
+        <strong>Horário:</strong> ${timeAtMouse}<br>
+        <strong>Estação:</strong> ${nearestStop.station}
+    `;
+    updateTooltipPosition(e.clientX, e.clientY, text);
+}
+
 function showNodeTooltip(e, stop, trip) {
     const text = `
         <strong>Trem:</strong> ${trip.train_code}<br>
@@ -1024,4 +1049,30 @@ function startAutoScrollClock() {
     updateNowLineLabel();
     setInterval(autoScrollTick, AUTO_SCROLL_TICK_MS);
     setInterval(autoScrollResumeCheck, AUTO_SCROLL_RESUME_CHECK_MS);
+}
+
+// ==========================================================================
+// Theme Management
+// ==========================================================================
+function toggleTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    applyTheme(isDark ? 'light' : 'dark');
+}
+
+function applyTheme(theme) {
+    if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+    }
+    localStorage.setItem('grafico-theme', theme);
+    syncThemeIcon();
+}
+
+function syncThemeIcon() {
+    const btn = document.getElementById('btn-theme-toggle');
+    if (!btn) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    btn.textContent = isDark ? '☀️' : '🌙';
+    btn.title = isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro';
 }
