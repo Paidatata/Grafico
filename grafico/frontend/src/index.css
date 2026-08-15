@@ -1,27 +1,90 @@
 /* ==========================================================================
-   Design System & Variable Definitions
+   Design System & Variable Definitions — Light Theme (padrão)
    ========================================================================== */
 :root {
+    --bg-primary: #e9eef5;
+    --bg-secondary: #dde3ed;
+    --panel-bg: rgba(255, 255, 255, 0.85);
+    --panel-border: rgba(15, 23, 42, 0.09);
+
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+
+    --accent-planned: #0284c7;    /* Sky blue */
+    --accent-actual: #dc2626;     /* Red */
+    --accent-highlight: #d97706;  /* Amber */
+    --accent-interactive: #059669;/* Emerald */
+
+    --grid-major: rgba(15, 23, 42, 0.12);
+    --grid-minor: rgba(15, 23, 42, 0.04);
+    --station-line: rgba(15, 23, 42, 0.08);
+
+    /* Component-specific */
+    --chart-bg: #f1f5f9;
+    --title-gradient-start: #0f172a;
+    --now-label-bg: rgba(0, 0, 0, 0.32);
+    --tooltip-bg: rgba(255, 255, 255, 0.97);
+    --tooltip-border: rgba(15, 23, 42, 0.12);
+
+    /* Interactive surfaces */
+    --surface-subtle: rgba(0, 0, 0, 0.04);
+    --surface-mid: rgba(0, 0, 0, 0.06);
+    --surface-hover: rgba(0, 0, 0, 0.09);
+    --input-bg: rgba(0, 0, 0, 0.06);
+
+    /* Train selection */
+    --train-selected-bg: rgba(2, 132, 199, 0.09);
+    --train-selected-border: rgba(2, 132, 199, 0.28);
+
+    /* Scrollbar */
+    --scrollbar-track: rgba(0, 0, 0, 0.08);
+    --scrollbar-thumb: rgba(0, 0, 0, 0.16);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.26);
+
+    --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ==========================================================================
+   Dark Theme Overrides
+   ========================================================================== */
+[data-theme="dark"] {
     --bg-primary: #0a0f1d;
     --bg-secondary: #111827;
     --panel-bg: rgba(17, 24, 39, 0.75);
     --panel-border: rgba(255, 255, 255, 0.06);
-    
+
     --text-primary: #f3f4f6;
     --text-secondary: #9ca3af;
     --text-muted: #6b7280;
-    
-    --accent-planned: #00f0ff;    /* Neon Cyan */
-    --accent-actual: #ff3b30;     /* Vivid Red */
-    --accent-highlight: #ffcc00;  /* Yellow */
-    --accent-interactive: #10b981;/* Emerald Green */
-    
+
+    --accent-planned: #00f0ff;
+    --accent-actual: #ff3b30;
+    --accent-highlight: #ffcc00;
+    --accent-interactive: #10b981;
+
     --grid-major: rgba(255, 255, 255, 0.15);
     --grid-minor: rgba(255, 255, 255, 0.04);
     --station-line: rgba(255, 255, 255, 0.08);
-    
-    --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+
+    --chart-bg: #05070c;
+    --title-gradient-start: #ffffff;
+    --now-label-bg: rgba(0, 0, 0, 0.5);
+    --tooltip-bg: rgba(17, 24, 39, 0.95);
+    --tooltip-border: rgba(255, 255, 255, 0.15);
+
+    --surface-subtle: rgba(255, 255, 255, 0.04);
+    --surface-mid: rgba(255, 255, 255, 0.07);
+    --surface-hover: rgba(255, 255, 255, 0.11);
+    --input-bg: rgba(0, 0, 0, 0.3);
+
+    --train-selected-bg: rgba(0, 240, 255, 0.08);
+    --train-selected-border: rgba(0, 240, 255, 0.2);
+
+    --scrollbar-track: rgba(0, 0, 0, 0.2);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
 }
 
 /* ==========================================================================
@@ -40,6 +103,7 @@ body {
     overflow: hidden;
     height: 100vh;
     width: 100vw;
+    transition: background-color 0.3s ease, color 0.2s ease;
 }
 
 /* ==========================================================================
@@ -62,7 +126,8 @@ body {
     border: 1px solid var(--panel-border);
     border-radius: 16px;
     backdrop-filter: blur(12px);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12);
+    transition: background-color 0.3s ease, border-color 0.2s ease;
 }
 
 .logo-area {
@@ -79,7 +144,7 @@ body {
     font-size: 24px;
     font-weight: 700;
     letter-spacing: -0.5px;
-    background: linear-gradient(135deg, #ffffff 30%, var(--accent-planned));
+    background: linear-gradient(135deg, var(--title-gradient-start) 30%, var(--accent-planned));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -115,9 +180,10 @@ body {
     border: 1px solid var(--panel-border);
     border-radius: 16px;
     backdrop-filter: blur(12px);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12);
     display: flex;
     flex-direction: column;
+    transition: background-color 0.3s ease, border-color 0.2s ease;
 }
 
 /* ==========================================================================
@@ -147,7 +213,7 @@ body {
     font-weight: 600;
     padding: 4px 8px;
     border-radius: 9999px;
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--surface-mid);
     border: 1px solid var(--panel-border);
     color: var(--accent-planned);
 }
@@ -167,7 +233,7 @@ body {
 
 .search-box input {
     width: 100%;
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: var(--input-bg);
     border: 1px solid var(--panel-border);
     border-radius: 8px;
     padding: 10px 12px 10px 38px;
@@ -204,12 +270,12 @@ body {
 }
 
 .train-item:hover {
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: var(--surface-subtle);
 }
 
 .train-item.selected {
-    background-color: rgba(0, 240, 255, 0.08);
-    border-color: rgba(0, 240, 255, 0.2);
+    background-color: var(--train-selected-bg);
+    border-color: var(--train-selected-border);
 }
 
 .train-info {
@@ -280,9 +346,10 @@ body {
 .chart-scroll-container {
     flex: 1;
     overflow: auto;
-    background-color: #05070c;
+    background-color: var(--chart-bg);
     border-radius: 0 0 16px 16px;
     position: relative;
+    transition: background-color 0.3s ease;
 }
 
 .chart-viewport {
@@ -320,7 +387,7 @@ body {
     font-size: 11px;
     font-weight: 600;
     color: var(--accent-highlight);
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: var(--now-label-bg);
     padding: 2px 6px;
     border-radius: 4px;
     white-space: nowrap;
@@ -380,12 +447,12 @@ svg {
 
 .train-path-planned:hover {
     stroke-width: 4;
-    stroke: #ffffff;
+    stroke: var(--text-primary);
 }
 
 .train-path-planned.highlighted {
     stroke-width: 4.5;
-    stroke: #ffffff;
+    stroke: var(--text-primary);
 }
 
 .train-path-actual {
@@ -393,6 +460,18 @@ svg {
     stroke: var(--accent-actual);
     stroke-width: 2.5;
     pointer-events: none;
+}
+
+.train-path-past {
+    fill: none;
+    stroke: var(--accent-actual);
+    stroke-width: 2.5;
+    cursor: pointer;
+    transition: stroke-width 0.2s;
+}
+
+.train-path-past:hover {
+    stroke-width: 4;
 }
 
 /* Draggable Nodes */
@@ -463,23 +542,48 @@ svg {
 }
 
 .btn-primary:hover {
-    background-color: #059669;
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+    background-color: #047857;
+    box-shadow: 0 0 12px rgba(5, 150, 105, 0.35);
 }
 
 .btn-secondary {
-    background-color: rgba(255, 255, 255, 0.06);
+    background-color: var(--surface-mid);
     border-color: var(--panel-border);
     color: var(--text-primary);
 }
 
 .btn-secondary:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--surface-hover);
 }
 
 .btn-sm {
     padding: 6px 12px;
     font-size: 11px;
+}
+
+/* Theme toggle button */
+.btn-theme-toggle {
+    background-color: var(--surface-mid);
+    border: 1px solid var(--panel-border);
+    color: var(--text-primary);
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.btn-theme-toggle:hover {
+    background-color: var(--surface-hover);
+    transform: scale(1.08);
+}
+
+.btn-theme-toggle:active {
+    transform: scale(0.95);
 }
 
 .tab-btn {
@@ -497,12 +601,12 @@ svg {
 
 .tab-btn:hover {
     color: var(--text-primary);
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: var(--surface-subtle);
 }
 
 .tab-btn.active {
     color: var(--text-primary);
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--surface-mid);
     font-weight: 600;
 }
 
@@ -528,7 +632,7 @@ svg {
     font-weight: 600;
     padding: 8px 16px;
     border-radius: 8px;
-    background-color: rgba(255, 255, 255, 0.06);
+    background-color: var(--surface-mid);
     border: 1px solid var(--panel-border);
     color: var(--text-primary);
     cursor: pointer;
@@ -536,7 +640,7 @@ svg {
 }
 
 .upload-label:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--surface-hover);
 }
 
 /* ==========================================================================
@@ -544,8 +648,8 @@ svg {
    ========================================================================== */
 .tooltip {
     position: fixed;
-    background-color: rgba(17, 24, 39, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background-color: var(--tooltip-bg);
+    border: 1px solid var(--tooltip-border);
     border-radius: 8px;
     padding: 10px 14px;
     font-size: 12px;
@@ -553,7 +657,7 @@ svg {
     color: var(--text-primary);
     pointer-events: none;
     z-index: 1000;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
     backdrop-filter: blur(8px);
     transition: opacity 0.15s;
     line-height: 1.5;
@@ -571,14 +675,14 @@ svg {
 }
 
 ::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--scrollbar-thumb);
     border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--scrollbar-thumb-hover);
 }

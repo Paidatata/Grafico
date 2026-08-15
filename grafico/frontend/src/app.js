@@ -557,40 +557,69 @@ function drawGrid(svg) {
     }
 }
 
+function splitTripAtNow(trip, selectedLine) {
+    const nowX = timeToX(currentClockTimeStr());
+    const stopsWithCoords = trip.stops.map(stop => ({
+        x: timeToX(stop.time),
+        y: dxfYToSvg(stop.y_coord, selectedLine)
+    }));
+
+    const pastPoints = [];
+    const futurePoints = [];
+
+    for (let i = 0; i < stopsWithCoords.length; i++) {
+        const p = stopsWithCoords[i];
+        if (p.x <= nowX) {
+            pastPoints.push(p);
+        } else {
+            if (pastPoints.length > 0 && futurePoints.length === 0) {
+                const prev = stopsWithCoords[i - 1];
+                const t = (nowX - prev.x) / (p.x - prev.x);
+                const interpY = prev.y + t * (p.y - prev.y);
+                const split = { x: nowX, y: interpY };
+                pastPoints.push(split);
+                futurePoints.push(split);
+            }
+            futurePoints.push(p);
+        }
+    }
+
+    return { pastPoints, futurePoints };
+}
+
 function drawTrainPaths(svg) {
     const lineTrips = getFilteredTrips();
     
     // Draw planned train paths
     lineTrips.forEach(trip => {
         const isSelected = appState.selectedTripId === trip.trip_id;
-        
-        // Compute path string
-        let points = trip.stops.map(stop => {
-            const px = timeToX(stop.time);
-            const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
-            return `${px},${py}`;
-        }).join(" ");
-        
-        const polyline = document.createElementNS(SVG_NS, "polyline");
-        polyline.setAttribute("points", points);
-        polyline.setAttribute("id", `line-${trip.trip_id}`);
-        polyline.className.baseVal = `train-path-planned ${isSelected ? 'highlighted' : ''}`;
+        const { pastPoints, futurePoints } = splitTripAtNow(trip, appState.selectedLine);
 
-        // Per-node labels on hover; tooltip tracks mouse dynamically
-        polyline.addEventListener("mouseover", () => {
-            showHoverNodeLabels(trip);
-        });
-        polyline.addEventListener("mousemove", (e) => {
-            showTripTooltipDynamic(e, trip);
-        });
-        polyline.addEventListener("mouseout", () => {
-            hideTooltip();
-            clearHoverNodeLabels();
-        });
-        polyline.addEventListener("click", () => selectTrip(trip.trip_id));
-        
-        svg.appendChild(polyline);
-        
+        function attachTripLineEvents(polyline) {
+            polyline.addEventListener("mouseover", () => showHoverNodeLabels(trip));
+            polyline.addEventListener("mousemove", (e) => showTripTooltipDynamic(e, trip));
+            polyline.addEventListener("mouseout", () => { hideTooltip(); clearHoverNodeLabels(); });
+            polyline.addEventListener("click", () => selectTrip(trip.trip_id));
+        }
+
+        if (pastPoints.length >= 2) {
+            const pastLine = document.createElementNS(SVG_NS, "polyline");
+            pastLine.setAttribute("points", pastPoints.map(p => `${p.x},${p.y}`).join(" "));
+            pastLine.setAttribute("id", `line-${trip.trip_id}-past`);
+            pastLine.className.baseVal = "train-path-past";
+            attachTripLineEvents(pastLine);
+            svg.appendChild(pastLine);
+        }
+
+        if (futurePoints.length >= 2) {
+            const futureLine = document.createElementNS(SVG_NS, "polyline");
+            futureLine.setAttribute("points", futurePoints.map(p => `${p.x},${p.y}`).join(" "));
+            futureLine.setAttribute("id", `line-${trip.trip_id}-future`);
+            futureLine.className.baseVal = `train-path-planned ${isSelected ? 'highlighted' : ''}`;
+            attachTripLineEvents(futureLine);
+            svg.appendChild(futureLine);
+        }
+
         // If selected, draw interactive handles/circles
         if (isSelected) {
             trip.stops.forEach((stop, stopIdx) => {
@@ -766,24 +795,22 @@ function onNodeDragEnd(e) {
 }
 
 function updateSvgVisuals(trip) {
-    // Redraw polyline points
-    const pointsStr = trip.stops.map(stop => {
-        const px = timeToX(stop.time);
-        const py = dxfYToSvg(stop.y_coord, appState.selectedLine);
-        return `${px},${py}`;
-    }).join(" ");
+    const { pastPoints, futurePoints } = splitTripAtNow(trip, appState.selectedLine);
 
-    const polyline = document.getElementById(`line-${trip.trip_id}`);
-    if (polyline) polyline.setAttribute("points", pointsStr);
+    const pastPolyline = document.getElementById(`line-${trip.trip_id}-past`);
+    if (pastPolyline) {
+        pastPolyline.setAttribute("points", pastPoints.map(p => `${p.x},${p.y}`).join(" "));
+    }
 
-    // Update node positions (circles), looked up by the stable id assigned in
-    // drawTrainPaths rather than by position in the SVG's circle list.
+    const futurePolyline = document.getElementById(`line-${trip.trip_id}-future`);
+    if (futurePolyline) {
+        futurePolyline.setAttribute("points", futurePoints.map(p => `${p.x},${p.y}`).join(" "));
+    }
+
     trip.stops.forEach((stop, stopIdx) => {
         const px = timeToX(stop.time);
         const circle = document.getElementById(`node-${trip.trip_id}-${stopIdx}`);
-        if (circle) {
-            circle.setAttribute("cx", px);
-        }
+        if (circle) circle.setAttribute("cx", px);
     });
 }
 
@@ -1031,10 +1058,11 @@ function updateNowLineLabel() {
 
 function autoScrollTick() {
     if (appState.dragNode) return;
+    updateNowLineLabel();
     if (!appState.autoScrollPaused) {
         centerChartOnTime(currentClockTimeStr(), { smooth: true });
+        renderChart();
     }
-    updateNowLineLabel();
 }
 
 function autoScrollResumeCheck() {
