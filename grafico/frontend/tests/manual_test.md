@@ -92,3 +92,22 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 2. Confirme que aparece um rótulo pequeno (código do trem + horário) ao lado de cada nó/parada daquela viagem, além do tooltip que já existia perto do cursor.
 3. Tire o mouse da linha e confirme que os rótulos somem.
 4. Passe o mouse rapidamente por duas linhas diferentes em seguida; confirme que os rótulos da primeira não ficam "grudados" na tela.
+
+## Tooltip Dinâmico
+- [ ] Passar o mouse lentamente sobre qualquer linha do gráfico: o tooltip deve aparecer mostrando **Trem**, **Horário** (varia conforme o mouse se move) e **Estação** (muda ao aproximar de nós diferentes)
+- [ ] Confirmar que os rótulos nos nós (train_code + horário) aparecem ao entrar na linha e somem ao sair
+- [ ] Passar o mouse sobre um nó individual (círculo verde): tooltip deve mostrar Trem / Estação / Horário específicos do nó
+- [ ] O tooltip deve seguir o mouse enquanto ele se move sobre a linha
+
+## Deselect Automático por Inatividade
+- [ ] Selecionar um trem (clique na linha ou na sidebar): nós/círculos aparecem, linha fica highlighted na sidebar
+- [ ] Não interagir com o gráfico por 30 segundos
+- [ ] Confirmar que os nós desaparecem e o trem perde destaque automaticamente
+- [ ] Confirmar que o auto-scroll retoma centralizado no horário atual após o deselect
+
+## Porção Passada como Realizado
+- [ ] Verificar que linhas à **esquerda** da linha amarela (agora) são **sólidas** (cor vermelha, estilo "realizado")
+- [ ] Verificar que linhas à **direita** da linha amarela são **tracejadas** (azul/ciano, estilo "planejado")
+- [ ] Selecionar um trem que esteja parcialmente no passado: clicar tanto na parte sólida quanto na tracejada deve selecionar o trem igualmente
+- [ ] Aguardar 15 segundos: confirmar que o ponto de corte avança com o relógio
+- [ ] Clicar em "Mostrar Realizado": o overlay de dados mock deve aparecer corretamente acima das linhas existentes
