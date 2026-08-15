@@ -56,6 +56,8 @@ O servidor mantém em memória `current_schedule_id` (qual grade foi carregada p
 | `POST` | `/api/schedules/{id}/clone` | Salvar Como. Body: `{ "name": "string" }`. Copia todos os template_trips e template_planned_stops para nova grade |
 | `PATCH` | `/api/schedules/{id}` | Renomear. Body: `{ "name": "string" }` |
 | `POST` | `/api/schedules/{id}/load` | Carrega grade para operação. Copia template → live tables, atualiza `last_loaded_at`, define `current_schedule_id` no servidor |
+| `PATCH` | `/api/schedules/{id}/trips/{trip_id}` | Atualiza prefixo de uma viagem. Body: `{ "prefix": "string" }`. Executa renumeração completa da grade após atualizar. |
+| `POST` | `/api/schedules/{id}/renumber` | Renumera todos os trips da grade conforme regra de ordenação (direção → horário → proximidade do terminal). Retorna trips atualizados. |
 
 ### `POST /api/schedules/{id}/trips/batch` — payload
 
@@ -134,11 +136,22 @@ O `app-header` ganha dois botões de modo ao lado do logo:
 5. **Dialog de confirmação** abre com:
    - Origem: `[estação] às [HH:MM]`
    - Destino: `[estação] às [HH:MM]`
+   - Campo: **Prefixo** (texto, 1–3 letras, ex: `P`, `R`, `X`) — sem default; obrigatório. O prefixo é aplicado a todas as viagens do batch. A renumeração usa este prefixo: `P1, P3…` ou `R2, R4…` conforme direção, mas com a letra fornecida substituindo o padrão.
    - Campo: **Nº de viagens** (número, default 1)
    - Campo: **Intervalo** (MM:SS, headway entre viagens)
    - **Tabela de tempos por estação** (editável): cada estação intermediária com offset em minutos calculado da média das viagens existentes no banco no mesmo sentido. Se nenhuma viagem existir, distribui linearmente.
    - Botões: `Criar` / `Cancelar`
 6. `Criar` → `POST /api/schedules/{id}/trips/batch` → viagens aparecem no canvas → renumeração executada no backend
+
+### Edição de prefixo pós-criação
+
+Botão direito sobre qualquer viagem no canvas de edição → menu contextual inclui **"Editar prefixo"** → input inline (ou pequeno dialog) com o prefixo atual pré-preenchido. Ao confirmar:
+
+- Backend: `PATCH /api/schedules/{id}/trips/{trip_id}` com `{ "prefix": "X" }`
+- Backend aplica o novo prefixo e executa renumeração sequencial de todos os trips da grade (`/api/schedules/{id}/renumber`)
+- Canvas atualiza os `train_code` exibidos
+
+A renumeração ao trocar prefixo segue a mesma regra de ordenação (direção → horário → proximidade do terminal), usando o novo prefixo fornecido.
 
 ### `yToStation` — nova função
 
