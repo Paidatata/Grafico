@@ -474,6 +474,14 @@ svg {
     stroke-width: 4;
 }
 
+/* Transparent wide polyline on top of each trip for easier mouse targeting */
+.train-hit-area {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 20;
+    cursor: pointer;
+}
+
 /* Draggable Nodes */
 .time-node {
     fill: var(--accent-interactive);

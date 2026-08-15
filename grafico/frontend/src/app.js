@@ -444,17 +444,6 @@ function switchLine(lineType) {
 function selectTrip(tripId) {
     appState.selectedTripId = appState.selectedTripId === tripId ? null : tripId;
     renderApp();
-
-    // Scroll chart horizontally to show selected train. Deliberately does NOT
-    // call markUserInteraction() — selecting a trip from the list is a
-    // separate, pre-existing behavior from the two auto-scroll pause
-    // triggers (node drag, manual chart scroll) and must not pause the clock.
-    if (appState.selectedTripId) {
-        const trip = appState.trips.find(t => t.trip_id === tripId);
-        if (trip) {
-            centerChartOnTime(trip.start_time);
-        }
-    }
 }
 
 // ==========================================================================
@@ -497,14 +486,23 @@ function drawGrid(svg) {
         line.className.baseVal = "station-grid-line";
         svg.appendChild(line);
         
-        // Station name label (fixed on left)
+        // Station sigla — left margin
         const label = document.createElementNS(SVG_NS, "text");
         label.setAttribute("x", MARGIN_LEFT - 15);
         label.setAttribute("y", y + 4);
         label.setAttribute("text-anchor", "end");
         label.className.baseVal = "station-label";
-        label.textContent = station.name;
+        label.textContent = station.id;
         svg.appendChild(label);
+
+        // Station sigla — right margin
+        const labelRight = document.createElementNS(SVG_NS, "text");
+        labelRight.setAttribute("x", CHART_WIDTH - MARGIN_RIGHT + 15);
+        labelRight.setAttribute("y", y + 4);
+        labelRight.setAttribute("text-anchor", "start");
+        labelRight.className.baseVal = "station-label";
+        labelRight.textContent = station.id;
+        svg.appendChild(labelRight);
     });
     
     // 2. Draw vertical time grid lines (every hour and every 10 minutes)
@@ -619,6 +617,15 @@ function drawTrainPaths(svg) {
             attachTripLineEvents(futureLine);
             svg.appendChild(futureLine);
         }
+
+        // Wide transparent hit area on top of visible polylines for easier mouse targeting
+        const hitArea = document.createElementNS(SVG_NS, "polyline");
+        hitArea.setAttribute("points", trip.stops.map(stop =>
+            `${timeToX(stop.time)},${dxfYToSvg(stop.y_coord, appState.selectedLine)}`
+        ).join(" "));
+        hitArea.className.baseVal = "train-hit-area";
+        attachTripLineEvents(hitArea);
+        svg.appendChild(hitArea);
 
         // If selected, draw interactive handles/circles
         if (isSelected) {
