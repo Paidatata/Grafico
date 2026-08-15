@@ -181,12 +181,6 @@ body {
     border-color: var(--accent-planned);
 }
 
-.toggle-buttons {
-    display: flex;
-    gap: 8px;
-    margin: 0 20px 16px 20px;
-}
-
 .train-list-container {
     flex: 1;
     overflow-y: auto;

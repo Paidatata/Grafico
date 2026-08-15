@@ -7,7 +7,7 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 1. Abra `frontend/src/index.html` em um navegador.
 2. Verifique se o app inicia carregando a **Linha 10 (Turquesa)** por padrão.
 3. Se o arquivo `schedule.json` não carregar automaticamente (devido a restrições CORS no protocolo `file://`), clique em **"Importar JSON"** e escolha o arquivo `frontend/data/schedule.json` ou `backend/data/schedule.json`.
-4. Verifique se a lista à esquerda exibe os trens (ex: `BFU-RGS 043600`, `BFU-RGS 043730`).
+4. Verifique se as listas laterais aparecem (uma de cada lado do gráfico). Como cada lista só mostra trens em trânsito no horário atual (ver Cenário 9), o conteúdo varia conforme a hora do dia e pode estar vazio — o importante é confirmar que as listas renderizam sem erro e, se houver algum trem `P...`/`R...`/`M...` em trânsito, ele aparece na lista correspondente.
 5. Clique na aba **"Linha 7 (Rubi)"** e verifique se as estações no eixo Y mudam para a sequência de Jundiaí a Luz (L7).
 6. Clique na aba **"Linha 710 (Unificada)"** e confirme que toda a malha integrada de Jundiaí a Rio Grande da Serra é desenhada em ordem física.
 
@@ -34,13 +34,13 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
    - Um tooltip exibe o nome da estação, o novo horário calculado e o delta do atraso em minutos (ex: `+12 min`).
    - A linha do trem se move em tempo real acompanhando o movimento do mouse.
    - **Propagação**: Todos os nós seguintes (downstream) desse trem se movem na mesma proporção de tempo, mantendo a inclinação (velocidade de viagem) idêntica entre as estações subsequentes.
-   - Os horários na lista lateral à esquerda se atualizam assim que você solta o mouse.
+   - Os horários na lista lateral correspondente (esquerda para trens `P...`, direita para `R.../M...`) se atualizam assim que você solta o mouse.
 
 ---
 
 ## Cenário 4: Comparação com Circulação Realizada
 
-1. Clique no botão **"Mostrar Realizado"** na barra lateral.
+1. Clique no botão **"Mostrar Realizado"** no cabeçalho do gráfico.
 2. Confirme que linhas vermelhas contínuas aparecem no gráfico representando a circulação real/realizada.
 3. Compare visualmente a distância entre a linha tracejada (planejada) e a vermelha (realizada) para estimar os desvios.
 
@@ -81,7 +81,7 @@ Este documento descreve os cenários de teste manual para validar a renderizaç�
 ## Cenário 10: Linha do "Agora" e Auto-Scroll
 
 1. Abra a aplicação. Confirme que a linha vertical amarela aparece centralizada na área do gráfico, com um rótulo mostrando o horário atual.
-2. Sem tocar em nada, espere ~15 segundos. Confirme que o gráfico rola sozinho para a esquerda por baixo da linha (que continua no centro) e o rótulo da linha avança.
+2. Sem tocar em nada, espere ~2 minutos (uma única tick de 15s não é perceptível: nessa escala ~8,2 px/min, 15s equivalem a ~2px, e o rótulo só muda a cada minuto). Confirme que o gráfico rastejou visivelmente para a esquerda por baixo da linha (~16px, que continua no centro) e que o rótulo da linha avançou aproximadamente 2 minutos.
 3. Role o gráfico manualmente (roda do mouse ou barra de rolagem) para um horário diferente. Confirme que a linha continua fixa no centro da tela, mas o rótulo agora mostra o horário para onde você rolou — não o horário real.
 4. Pare de interagir e espere 30 segundos. Confirme que o gráfico volta a rolar sozinho até o horário real aparecer centralizado outra vez.
 5. Arraste um nó de horário (edição normal) e confirme que, depois de soltar, o auto-scroll também fica pausado por 30s antes de retomar.

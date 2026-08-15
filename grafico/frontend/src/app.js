@@ -102,11 +102,17 @@ function currentClockTimeStr() {
 // True if referenceTimeStr falls within [trip.start_time, trip.end_time], in
 // service-day minutes so trips crossing midnight behave the same way the
 // backend's chronology/lookback checks and the drag-lock check already do.
+// Slack absorbs sub-pixel scrollLeft rounding: the chart is ~8.2 px/min, so a
+// half-pixel snap shifts the derived reference time by a few seconds and would
+// otherwise drop a trip from its own list at the exact instant it was centered
+// (e.g. right after clicking it in the sidebar).
+const IN_TRANSIT_SLACK_MINUTES = 0.5;
+
 function isTripInTransitAt(trip, referenceTimeStr) {
     const ref = timeStrToServiceMinutes(referenceTimeStr);
     const start = timeStrToServiceMinutes(trip.start_time);
     const end = timeStrToServiceMinutes(trip.end_time);
-    return ref >= start && ref <= end;
+    return ref >= start - IN_TRANSIT_SLACK_MINUTES && ref <= end + IN_TRANSIT_SLACK_MINUTES;
 }
 
 // "P15" -> 15. Used to sort each sidebar panel by departure order (parser.py
@@ -388,6 +394,8 @@ function renderTrainListPanel(listElementId, badgeElementId, trips) {
 function renderTrainLists() {
     renderTrainListPanel("train-list-odd", "train-count-odd", getOddTrips());
     renderTrainListPanel("train-list-even", "train-count-even", getEvenTrips());
+    filterTrainList("odd");
+    filterTrainList("even");
 }
 
 function getFilteredTrips() {
@@ -567,7 +575,7 @@ function drawTrainPaths(svg) {
         polyline.setAttribute("id", `line-${trip.trip_id}`);
         polyline.className.baseVal = `train-path-planned ${isSelected ? 'highlighted' : ''}`;
 
-        // Show tooltip on hover
+        // Show tooltip and per-node labels on hover
         polyline.addEventListener("mouseover", (e) => {
             showTripTooltip(e, trip);
             showHoverNodeLabels(trip);
@@ -977,8 +985,13 @@ function centerChartOnTime(timeStr, { smooth = true } = {}) {
     };
     container.addEventListener("scrollend", clearFlag, { once: true });
     // Fallback for browsers without scrollend: this container's smooth
-    // scrolls never take anywhere near this long to settle.
-    setTimeout(clearFlag, 1000);
+    // scrolls never take anywhere near this long to settle. Also removes the
+    // scrollend listener itself so it doesn't leak a closure per call in
+    // browsers that never fire scrollend.
+    setTimeout(() => {
+        container.removeEventListener("scrollend", clearFlag);
+        clearFlag();
+    }, 1000);
 }
 
 function markUserInteraction() {
@@ -992,9 +1005,11 @@ function updateNowLineLabel() {
 }
 
 function autoScrollTick() {
+    if (appState.dragNode) return;
     if (!appState.autoScrollPaused) {
         centerChartOnTime(currentClockTimeStr(), { smooth: true });
     }
+    updateNowLineLabel();
 }
 
 function autoScrollResumeCheck() {
