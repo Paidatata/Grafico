@@ -1041,6 +1041,10 @@ function autoScrollResumeCheck() {
     if (!appState.autoScrollPaused) return;
     if (Date.now() - appState.lastInteractionAt >= AUTO_SCROLL_RESUME_IDLE_MS) {
         appState.autoScrollPaused = false;
+        if (appState.selectedTripId !== null) {
+            appState.selectedTripId = null;
+            renderApp();
+        }
     }
 }
 
