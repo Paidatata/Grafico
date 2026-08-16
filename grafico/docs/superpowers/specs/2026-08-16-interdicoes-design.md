@@ -71,6 +71,8 @@ Ao criar, editar (mudar `y_top`/`y_bottom`/`start_time`/`end_time`) ou excluir u
 
 Para cada linha em `interdiction_stop_snapshots` desta interdição: restaura `arrival_time`/`departure_time` daquela parada real da viagem para o valor salvo, depois apaga as linhas de snapshot desta interdição. Se a interdição foi excluída, para por aqui.
 
+> **Emenda (2026-08-16, via Spec 2b — Edição de Viagem):** este passo agora respeita a regra geral "reset só toca o futuro" — só restaura uma parada se o horário **atualmente salvo** dela for `>= agora - edit_lookback_minutes`. Paradas mais antigas que isso ficam congeladas, mesmo que o snapshot tenha um valor diferente. Ver `2026-08-16-edicao-de-viagem-design.md` para a regra completa (a mesma se aplica a `reset_trip`).
+
 ### Passo 1 — Detectar candidatas
 
 Para cada viagem ao vivo (excluindo as já fora do escopo pelo caso de borda "trem já dentro", ver abaixo): interpola entre as duas paradas reais que cercam a faixa `[y_top, y_bottom]` (usando os horários ao vivo **atuais**, pós passo 0) para achar `entry_time`/`exit_time` — o instante em que a linha da viagem cruzaria a faixa, assumindo velocidade constante entre as duas estações reais (mesma premissa de linha reta que o gráfico já desenha). Direção da viagem vem de comparar o Y da primeira e da última parada dela mesma. Descarta quem não cruza a faixa dentro de `[start_time, end_time]` da interdição.
