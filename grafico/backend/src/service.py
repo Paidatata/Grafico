@@ -846,64 +846,51 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
     )
     by_trip_id = {c[0]: c for c in candidates}
 
-    # Fleet regularity: delaying a train's origin departure must not eat into the headway
-    # in front of the departures that follow it -- cascade the exact same delta to every
-    # later same-direction departure, so the original spacing between consecutive
-    # departures is preserved (only the whole direction's timetable slides, together).
     all_trips_with_stops = [(t, _trip_stops(db, t.id)) for t in db.query(models.Trip).all()]
     direction_by_trip = {t.id: t.direction for t, _ in all_trips_with_stops}
-    origin_sm_by_trip = {
-        t.id: time_str_to_service_minutes(stops[0].departure_time)
-        for t, stops in all_trips_with_stops if stops
+    original_departure_by_key: dict[tuple[str, str], str] = {
+        (t.id, s.station_id): s.departure_time
+        for t, stops in all_trips_with_stops for s in stops
+    }
+    stop_index_by_trip_station: dict[tuple[str, str], int] = {
+        (t.id, s.station_id): idx
+        for t, stops in all_trips_with_stops for idx, s in enumerate(stops)
     }
     stops_by_trip = {t.id: stops for t, stops in all_trips_with_stops}
 
-    cumulative_delta: dict[str, float] = {}
-    for trip_id, delta, _, _ in sequenced:
-        if not delta:
-            continue
-        cumulative_delta[trip_id] = cumulative_delta.get(trip_id, 0.0) + delta
-        held_direction = direction_by_trip.get(trip_id)
-        held_origin_sm = origin_sm_by_trip.get(trip_id)
-        if held_direction is None or held_origin_sm is None:
-            continue
-        for other_id, other_origin_sm in origin_sm_by_trip.items():
-            if other_id == trip_id:
-                continue
-            if direction_by_trip.get(other_id) != held_direction:
-                continue
-            if other_origin_sm > held_origin_sm:
-                cumulative_delta[other_id] = cumulative_delta.get(other_id, 0.0) + delta
-
-    affected = []
-    delayed_trip_ids = []
-    for trip_id, delta, new_entry_sm, new_exit_sm in sequenced:
-        _, _, original_entry_sm, _, _, _ = by_trip_id[trip_id]
-        affected.append(InterdictionAffectedTrip(
-            trip_id=trip_id,
-            entry_time=_service_minutes_to_time_str(new_entry_sm),
-            exit_time=_service_minutes_to_time_str(new_exit_sm),
-            original_entry_time=_service_minutes_to_time_str(original_entry_sm),
-        ))
-
-    for trip_id, total_delta in cumulative_delta.items():
-        if not total_delta:
-            continue
-        # Global time shift: the whole trip moves together (same delta from its own origin
-        # through its terminus), not just the stops from the crossing onward -- that would
-        # change that one segment's slope (speed), which is invalid. A pure translation
-        # keeps every segment's speed constant and puts the two trains' lines in contact
-        # exactly at the interdiction's border, never inside it.
-        for stop in stops_by_trip[trip_id]:
+    def apply_delta_from_station(trip_id: str, stops: list[models.PlannedStop], station_idx: int, delta: float) -> None:
+        # A held train can't wait mid-track -- it waits at S_prev's platform. S_prev's own
+        # arrival stays original (it got there on time); only its departure and everything
+        # downstream (both arrival and departure) shift, keeping every segment's speed
+        # constant everywhere. Same rule for a cascade recipient, anchored at its own stop
+        # matching the held train's S_prev station.
+        for offset, stop in enumerate(stops[station_idx:]):
             existing = db.get(models.InterdictionStopSnapshot, (interdiction.id, trip_id, stop.station_id))
             if existing is None:
                 db.add(models.InterdictionStopSnapshot(
                     interdiction_id=interdiction.id, trip_id=trip_id, station_id=stop.station_id,
                     arrival_time=stop.arrival_time, departure_time=stop.departure_time,
                 ))
-            stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + total_delta)
-            stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + total_delta)
-        delayed_trip_ids.append(trip_id)
+            if offset == 0:
+                stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
+            else:
+                stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + delta)
+                stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
+
+    affected = []
+    delayed_trip_ids: list[str] = []
+    for trip_id, delta, new_entry_sm, new_exit_sm in sequenced:
+        _, _, original_entry_sm, _, first_idx, stops = by_trip_id[trip_id]
+        if delta:
+            s_prev_idx = first_idx - 1
+            apply_delta_from_station(trip_id, stops, s_prev_idx, delta)
+            delayed_trip_ids.append(trip_id)
+        affected.append(InterdictionAffectedTrip(
+            trip_id=trip_id,
+            entry_time=_service_minutes_to_time_str(new_entry_sm),
+            exit_time=_service_minutes_to_time_str(new_exit_sm),
+            original_entry_time=_service_minutes_to_time_str(original_entry_sm),
+        ))
 
     db.commit()
 
