@@ -106,16 +106,22 @@ def test_create_interdiction_cascades_delay_to_later_same_direction_departures(d
     delta = time_str_to_minutes(held.entry_time) - time_str_to_minutes(held.original_entry_time)
     assert delta > 0  # sanity: this trip was actually held
 
-    # Same direction, departs later than the held trip's original departure: must cascade
-    # by the exact same delta, preserving the original headway between the two departures.
+    # TRIP_RGS-BFU_050500's S_prev is SAN (see test_create_interdiction_holds_the_train_at_s_prev_only).
+    # TRIP_RGS-BFU_060000 (RGS 06:00 -> SAN 06:10 -> BFU 06:30) passes through SAN later than
+    # the held trip's *original* SAN departure (05:10) -- it must cascade by the same delta,
+    # anchored at ITS OWN SAN stop (its own RGS departure stays untouched).
     later_same_direction = service.get_trip(db_session, "TRIP_RGS-BFU_060000")
-    new_departure = later_same_direction.stops[0].time
-    shift = time_str_to_minutes(new_departure) - time_str_to_minutes("06:00:00")
-    assert shift == pytest.approx(delta, abs=2 / 60)
+    by_station = {s.station: s for s in later_same_direction.stops}
+    assert by_station["RGS"].time == "06:00:00"  # before its own S_prev-equivalent: untouched
+    assert by_station["SAN"].arrival_time == "06:10:00"
+    assert time_str_to_minutes(by_station["SAN"].time) - time_str_to_minutes("06:10:00") == pytest.approx(delta, abs=2 / 60)
+    assert time_str_to_minutes(by_station["BFU"].time) - time_str_to_minutes("06:30:00") == pytest.approx(delta, abs=2 / 60)
 
+    # Headway at SAN (the shared station) between the two departures is preserved exactly.
     held_trip = service.get_trip(db_session, "TRIP_RGS-BFU_050500")
-    original_headway = time_str_to_minutes("06:00:00") - time_str_to_minutes("05:00:00")
-    new_headway = time_str_to_minutes(new_departure) - time_str_to_minutes(held_trip.stops[0].time)
+    held_new_san_departure = next(s.time for s in held_trip.stops if s.station == "SAN")
+    original_headway = time_str_to_minutes("06:10:00") - time_str_to_minutes("05:10:00")
+    new_headway = time_str_to_minutes(by_station["SAN"].time) - time_str_to_minutes(held_new_san_departure)
     assert new_headway == pytest.approx(original_headway, abs=2 / 60)
 
     # Opposite direction, later departure: must NOT cascade -- headway preservation is

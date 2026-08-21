@@ -856,8 +856,6 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
         (t.id, s.station_id): idx
         for t, stops in all_trips_with_stops for idx, s in enumerate(stops)
     }
-    stops_by_trip = {t.id: stops for t, stops in all_trips_with_stops}
-
     def apply_delta_from_station(trip_id: str, stops: list[models.PlannedStop], station_idx: int, delta: float) -> None:
         # A held train can't wait mid-track -- it waits at S_prev's platform. S_prev's own
         # arrival stays original (it got there on time); only its departure and everything
@@ -883,8 +881,32 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
         _, _, original_entry_sm, _, first_idx, stops = by_trip_id[trip_id]
         if delta:
             s_prev_idx = first_idx - 1
+            s_prev_station = stops[s_prev_idx].station_id
+            held_original_departure_sm = time_str_to_service_minutes(original_departure_by_key[(trip_id, s_prev_station)])
+
             apply_delta_from_station(trip_id, stops, s_prev_idx, delta)
             delayed_trip_ids.append(trip_id)
+
+            # Gatilho de Cascata por Interdição (Spec 4): the same flat delta propagates to
+            # every later same-direction departure through S_prev, so the headway planned
+            # between consecutive departures at that station is never eaten by this hold.
+            # Unconditional -- does not check auto_regulation_enabled, and does not call
+            # apply_regulation (that's the separate, tapering ramp for the Spec 4 toggle).
+            held_direction = direction_by_trip[trip_id]
+            for other_trip, other_stops in all_trips_with_stops:
+                other_id = other_trip.id
+                if other_id == trip_id or direction_by_trip.get(other_id) != held_direction:
+                    continue
+                other_idx = stop_index_by_trip_station.get((other_id, s_prev_station))
+                if other_idx is None:
+                    continue
+                other_original_departure_sm = time_str_to_service_minutes(
+                    original_departure_by_key[(other_id, s_prev_station)]
+                )
+                if other_original_departure_sm > held_original_departure_sm:
+                    apply_delta_from_station(other_id, other_stops, other_idx, delta)
+                    if other_id not in delayed_trip_ids:
+                        delayed_trip_ids.append(other_id)
         affected.append(InterdictionAffectedTrip(
             trip_id=trip_id,
             entry_time=_service_minutes_to_time_str(new_entry_sm),
