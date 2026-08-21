@@ -172,7 +172,9 @@ body {
     display: flex;
     flex: 1;
     gap: 16px;
-    min-height: 0; /* Important for flex child scrolling */
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .glass-panel {
@@ -307,6 +309,8 @@ body {
 .graphic-area {
     flex: 1;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .legend {
@@ -345,18 +349,32 @@ body {
 
 .chart-scroll-container {
     flex: 1;
-    overflow: auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    overflow-x: scroll !important;
+    overflow-y: hidden;
     background-color: var(--chart-bg);
     border-radius: 0 0 16px 16px;
     position: relative;
+    cursor: grab;
+    user-select: none;
     transition: background-color 0.3s ease;
+}
+
+.chart-scroll-container.is-panning {
+    cursor: grabbing !important;
+    user-select: none;
 }
 
 .chart-viewport {
     flex: 1;
     min-height: 0;
+    min-width: 0;
     position: relative;
     display: flex;
+    overflow: hidden;
 }
 
 .now-line-overlay {
@@ -435,6 +453,99 @@ svg {
     stroke-width: 2;
 }
 
+/* Turnaround Connectors - 3 níveis acima da estação terminal */
+.turnaround-connector {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    cursor: pointer;
+    transition: stroke-width 0.2s, stroke 0.2s, opacity 0.2s;
+}
+
+/* Viagens Futuras: Tracejada */
+.turnaround-connector.future {
+    stroke: var(--accent-planned, #0284c7);
+    stroke-width: 2.5;
+    stroke-dasharray: 4 3;
+}
+
+.turnaround-connector.future:hover {
+    stroke: #38bdf8;
+    stroke-width: 4.5;
+}
+
+/* Viagens Realizadas (Passadas): Vermelha contínua */
+.turnaround-connector.realized {
+    stroke: #ef4444;
+    stroke-width: 2.5;
+    stroke-dasharray: none;
+}
+
+.turnaround-connector.realized:hover {
+    stroke: #f87171;
+    stroke-width: 4.5;
+}
+
+/* Violações (Gap < Mínimo 3 min) */
+.turnaround-connector.violation {
+    stroke: #dc2626;
+    stroke-width: 3.5;
+    stroke-dasharray: 2 2;
+}
+
+.turnaround-connector.violation:hover {
+    stroke: #b91c1c;
+    stroke-width: 5.5;
+}
+
+/* Nós indicadores das extremidades do turnaround */
+.turnaround-node {
+    fill: var(--accent-planned, #0284c7);
+    stroke: #ffffff;
+    stroke-width: 1;
+    pointer-events: none;
+}
+
+.turnaround-node.future {
+    fill: var(--accent-planned, #0284c7);
+}
+
+.turnaround-node.realized {
+    fill: #ef4444;
+}
+
+.turnaround-node.violation {
+    fill: #dc2626;
+}
+
+/* Train Lines - Past / Realized (Viagens Realizadas) */
+.train-path-past {
+    fill: none !important;
+    stroke: #ef4444 !important;
+    stroke-width: 2.5px !important;
+    stroke-dasharray: none !important;
+    transition: stroke-width 0.2s, stroke 0.2s;
+    cursor: pointer;
+}
+
+.train-path-past:hover {
+    stroke-width: 4.5px !important;
+    stroke: #f87171 !important;
+}
+
+/* Floating Station Labels - Pinned to Vertical Hour / Now Line */
+.floating-station-label {
+    font-size: 11px;
+    font-weight: 700;
+    fill: var(--text-muted, #475569);
+    paint-order: stroke;
+    stroke: var(--bg-surface, #ffffff);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+    pointer-events: none;
+    user-select: none;
+}
+
 /* Train Lines */
 .train-path-planned {
     fill: none;
@@ -503,6 +614,19 @@ svg {
     stroke: rgba(255, 204, 0, 0.6);
     stroke-width: 14;
     r: 8;
+}
+
+.time-node.snap-target {
+    fill: #ec4899;
+    stroke: rgba(236, 72, 153, 0.7);
+    stroke-width: 14;
+    r: 9;
+    animation: pulse-snap 0.8s infinite alternate;
+}
+
+@keyframes pulse-snap {
+    from { stroke-width: 10; r: 8; }
+    to { stroke-width: 18; r: 10; }
 }
 
 .time-node.locked {
@@ -678,19 +802,158 @@ svg {
 
 /* Scrollbar Customization */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 9999px;
+    background: var(--accent-planned, #0284c7);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-hover);
+    background: #0369a1;
+    background-clip: content-box;
 }
+
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: var(--accent-planned, #38bdf8);
+    background-clip: content-box;
+}
+
+/* ==========================================================================
+   Dialog Component
+   ========================================================================== */
+.dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.dialog-overlay.hidden { display: none; }
+.dialog-box {
+    background: var(--panel-bg, #fff);
+    color: var(--text-primary, #111);
+    border-radius: 8px;
+    padding: 24px;
+    min-width: 320px;
+    max-width: 480px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.dialog-box h3 { margin: 0 0 16px; font-weight: 600; font-size: 1.1em; color: var(--title-gradient-start, #111); }
+.dialog-field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+.dialog-field label { font-size: 0.85em; color: var(--text-secondary, #666); }
+.dialog-field input {
+    background: var(--input-bg, #fff);
+    border: 1px solid var(--panel-border, #ccc);
+    color: var(--text-primary, #111);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.9em;
+}
+.dialog-field input:focus {
+    outline: none;
+    border-color: var(--accent-planned, #0284c7);
+}
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* ==========================================================================
+   Context Menu Component
+   ========================================================================== */
+.context-menu {
+    position: fixed;
+    z-index: 1001;
+    background: var(--panel-bg, #fff);
+    color: var(--text-primary, #111);
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    min-width: 180px;
+}
+.context-menu.hidden { display: none; }
+.context-menu li {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+.context-menu li:hover { background: var(--surface-hover, rgba(0,0,0,0.06)); }
+
+.mode-tabs { display: flex; gap: 4px; }
+#schedules-view.hidden, #operational-view.hidden { display: none !important; }
+#operational-view, #schedules-view {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    gap: 16px;
+    min-height: 0;
+    min-width: 0;
+}
+
+.schedules-actions { display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+
+.train-path-suppressed {
+    fill: none;
+    stroke: var(--text-secondary, #999);
+    stroke-width: 1.5;
+    stroke-dasharray: 4, 4;
+    opacity: 0.6;
+}
+.time-node.suppressed {
+    fill: var(--text-secondary, #999);
+    opacity: 0.5;
+    cursor: default;
+}
+
+.turnaround-connector {
+    stroke: var(--text-secondary, #999);
+    stroke-width: 3;
+    opacity: 0.5;
+}
+.turnaround-connector.violation {
+    stroke: #dc2626;
+    opacity: 0.9;
+}
+
+#btn-auto-regulation.active {
+    background: var(--accent-planned, #0284c7);
+    color: white;
+}
+
+.interdiction-rect {
+    fill: rgba(220, 38, 38, 0.18);
+    stroke: rgba(220, 38, 38, 0.6);
+    stroke-width: 1;
+    cursor: pointer;
+}
+.interdiction-rect-preview {
+    stroke-dasharray: 5 3;
+    cursor: crosshair;
+    pointer-events: none;
+}
+.interdiction-label {
+    font-size: 11px;
+    fill: rgba(220, 38, 38, 0.9);
+    pointer-events: none;
+}
+
+
+
+

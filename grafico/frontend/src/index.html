@@ -32,6 +32,11 @@
                     <p class="subtitle">Circulação Ferroviária &bullet; Linha 710</p>
                 </div>
             </div>
+
+            <div class="mode-tabs">
+                <button class="tab-btn active" id="btn-mode-operational" onclick="switchMode('operational')">Operacional</button>
+                <button class="tab-btn" id="btn-mode-schedules" onclick="switchMode('schedules')">Grades</button>
+            </div>
             
             <div class="header-controls">
                 <div class="line-selector">
@@ -45,6 +50,7 @@
                     <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetToOriginal()">🔄 Resetar</button>
                 </div>
 
+
                 <div class="file-upload-wrapper">
                     <label for="json-upload" class="upload-label" id="upload-label-id">
                         <span class="upload-icon">📂</span> Importar JSON
@@ -53,14 +59,17 @@
                 </div>
                 
                 <button class="btn btn-primary" id="btn-save" onclick="exportData()">💾 Exportar Grade</button>
+                <button class="btn-theme-toggle" id="btn-auto-regulation" onclick="toggleAutoRegulation()" title="Regulação automática de partidas">⚙️</button>
                 <button class="btn-theme-toggle" id="btn-theme-toggle" onclick="toggleTheme()" title="Alternar modo claro/escuro">🌙</button>
             </div>
+
         </header>
 
         <!-- Main Content Layout -->
         <main class="main-content">
-            <!-- Sidebar Left: odd-numbered trains (destino Barra Funda) -->
-            <aside class="sidebar sidebar-left glass-panel">
+            <div id="operational-view">
+                <!-- Sidebar Left: odd-numbered trains (destino Barra Funda) -->
+                <aside class="sidebar sidebar-left glass-panel">
                 <div class="panel-header">
                     <h2>Sentido BFU (Ímpares)</h2>
                     <span class="badge" id="train-count-odd">0 Trens</span>
@@ -119,13 +128,22 @@
                     </ul>
                 </div>
             </aside>
+            </div>
+            
+            <div id="schedules-view" class="hidden"></div>
         </main>
         
         <!-- Live Tooltip -->
         <div id="tooltip" class="tooltip hidden"></div>
+
+        <div id="dialog-overlay" class="dialog-overlay hidden">
+            <div class="dialog-box" id="dialog-box"></div>
+        </div>
+        <ul id="context-menu" class="context-menu hidden"></ul>
     </div>
     
     <!-- Application Logic -->
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
+
 </body>
 </html>
