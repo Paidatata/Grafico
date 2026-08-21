@@ -24,7 +24,8 @@ def _freeze_service_now(monkeypatch, value: datetime) -> None:
 def test_get_schedule_empty_when_nothing_imported(app_client):
     response = app_client.get("/api/schedule")
     assert response.status_code == 200
-    assert response.json() == {"trips": []}
+    assert response.json()["trips"] == []
+
 
 
 def test_import_then_get_schedule(app_client):

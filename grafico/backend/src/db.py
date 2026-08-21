@@ -1,9 +1,9 @@
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from .models import Base, Setting, Station
+from .models import Base, Setting, Station, Schedule
 
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "railway.db")
 
@@ -61,6 +61,43 @@ def init_db(target_engine=None) -> None:
     Session = sessionmaker(bind=bind)
     db = Session()
     try:
+        # Run column migrations first using raw SQL before any ORM queries on modified models
+        try:
+            existing_cols = {row[1] for row in db.execute(text("PRAGMA table_info(stations)"))}
+            if "turnaround_seconds" not in existing_cols:
+                db.execute(text("ALTER TABLE stations ADD COLUMN turnaround_seconds INTEGER"))
+        except Exception as e:
+            print(f"Erro ao verificar ou atualizar tabela stations: {e}")
+
+        try:
+            existing_cols = {row[1] for row in db.execute(text("PRAGMA table_info(trips)"))}
+            if "active_first_seq" not in existing_cols:
+                db.execute(text("ALTER TABLE trips ADD COLUMN active_first_seq INTEGER"))
+            if "active_last_seq" not in existing_cols:
+                db.execute(text("ALTER TABLE trips ADD COLUMN active_last_seq INTEGER"))
+        except Exception as e:
+            print(f"Erro ao verificar ou atualizar tabela trips: {e}")
+
+        try:
+            result = db.execute(text("PRAGMA table_info(template_trips)"))
+            columns = [row[1] for row in result]
+            if 'schedule_id' not in columns:
+                db.execute(text("ALTER TABLE template_trips ADD COLUMN schedule_id INTEGER"))
+                db.execute(text("UPDATE template_trips SET schedule_id = 1 WHERE schedule_id IS NULL"))
+        except Exception as e:
+            print(f"Erro ao verificar ou atualizar tabela template_trips: {e}")
+
+        try:
+            result = db.execute(text("PRAGMA table_info(template_planned_stops)"))
+            columns = [row[1] for row in result]
+            if 'schedule_id' not in columns:
+                db.execute(text("ALTER TABLE template_planned_stops ADD COLUMN schedule_id INTEGER"))
+                db.execute(text("UPDATE template_planned_stops SET schedule_id = 1 WHERE schedule_id IS NULL"))
+        except Exception as e:
+            print(f"Erro ao verificar ou atualizar tabela template_planned_stops: {e}")
+
+        db.commit()
+
         if db.query(Station).count() == 0:
             for station in STATIONS_METADATA:
                 db.add(Station(**station))
@@ -68,6 +105,14 @@ def init_db(target_engine=None) -> None:
         if db.query(Setting).filter(Setting.key == "edit_lookback_minutes").first() is None:
             db.add(Setting(key="edit_lookback_minutes", value=DEFAULT_LOOKBACK_MINUTES))
 
+        # Verifica se o Schedule 'Grade Base CPTM' existe, se não existir insere
+        schedule = db.query(Schedule).filter(Schedule.name == "Grade Base CPTM").first()
+        if not schedule:
+            new_schedule = Schedule(id=1, name="Grade Base CPTM")
+            db.add(new_schedule)
+            db.commit()
+
         db.commit()
     finally:
         db.close()
+

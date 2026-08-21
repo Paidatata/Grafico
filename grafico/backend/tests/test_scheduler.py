@@ -37,6 +37,7 @@ def test_catchup_agrees_with_the_date_perform_daily_reset_writes(db_session):
     """should_run_catchup and perform_daily_reset must share one definition of "day"."""
     init_db(db_session.get_bind())
     reset_at = datetime(2026, 8, 14, 3, 0, 0)
+    service.set_current_schedule_id(1)
     service.perform_daily_reset(db_session, now=reset_at)
 
     stored = service.get_last_reset_date(db_session)
@@ -73,6 +74,7 @@ def test_startup_catchup_resets_when_stale(db_session):
         )
     ])
     # Explicitly set last_reset_date to yesterday to simulate server was down through yesterday's 03:00
+    service.set_current_schedule_id(1)
     service.perform_daily_reset(db_session, now=datetime(2026, 8, 13, 3, 0, 0))
 
     service.shift_stop(
@@ -88,8 +90,24 @@ def test_startup_catchup_resets_when_stale(db_session):
 
 def test_startup_catchup_skips_when_already_reset_today(db_session):
     init_db(db_session.get_bind())
+    service.set_current_schedule_id(1)
     service.perform_daily_reset(db_session, now=datetime(2026, 8, 13, 3, 0, 0))
 
     # No template/live data to disturb — just confirm this doesn't raise and doesn't re-touch last_reset_date oddly.
     run_startup_catchup_if_needed(db_session, now=datetime(2026, 8, 13, 9, 0, 0))
     assert service.get_last_reset_date(db_session) == "2026-08-13"
+
+
+def test_perform_daily_reset_is_noop_when_no_schedule_loaded(db_session):
+    init_db(db_session.get_bind())
+    service.set_current_schedule_id(None)
+    # Must not raise even with no live data and nothing loaded.
+    service.perform_daily_reset(db_session, now=datetime(2026, 8, 17, 3, 0, 0))
+    assert service.get_live_schedule(db_session).trips == []
+
+
+def test_startup_catchup_is_noop_when_no_schedule_loaded(db_session):
+    init_db(db_session.get_bind())
+    service.set_current_schedule_id(None)
+    run_startup_catchup_if_needed(db_session, now=datetime(2026, 8, 17, 3, 30, 0))
+    assert service.get_live_schedule(db_session).trips == []

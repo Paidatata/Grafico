@@ -13,6 +13,8 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _clean_tables():
+    from src import service
+    service.set_current_schedule_id(1)
     yield
     from src.db import Base, engine
 
@@ -20,6 +22,7 @@ def _clean_tables():
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(table.delete())
+    service.set_current_schedule_id(1)
 
 
 @pytest.fixture()

@@ -24,3 +24,24 @@ class ChronologyViolationError(Exception):
 
 class LookbackExceededError(Exception):
     pass
+
+
+class DuplicateScheduleNameError(Exception):
+    """A schedule name is not unique (maps to 400)."""
+
+
+class ScheduleNotFoundError(Exception):
+    def __init__(self, schedule_id: int):
+        self.schedule_id = schedule_id
+        super().__init__(f"Schedule not found: {schedule_id}")
+
+
+class LastScheduleDeletionError(Exception):
+    """Refuses to delete the only remaining schedule (maps to 400)."""
+
+
+class InterdictionNotFoundError(Exception):
+    def __init__(self, interdiction_id: int):
+        self.interdiction_id = interdiction_id
+        super().__init__(f"Interdiction not found: {interdiction_id}")
+
