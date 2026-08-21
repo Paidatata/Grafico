@@ -856,6 +856,8 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
         (t.id, s.station_id): idx
         for t, stops in all_trips_with_stops for idx, s in enumerate(stops)
     }
+    lookback_minutes = get_edit_lookback_minutes(db)
+
     def apply_delta_from_station(trip_id: str, stops: list[models.PlannedStop], station_idx: int, delta: float) -> None:
         # A held train can't wait mid-track -- it waits at S_prev's platform. S_prev's own
         # arrival stays original (it got there on time); only its departure and everything
@@ -863,6 +865,11 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
         # constant everywhere. Same rule for a cascade recipient, anchored at its own stop
         # matching the held train's S_prev station.
         for offset, stop in enumerate(stops[station_idx:]):
+            # Same lookback floor `_revert_interdiction` enforces, applied per stop: whatever
+            # revert refuses to undo, this must refuse to write, or a create-then-delete cycle
+            # leaves permanent drift in stops that are already in the past.
+            if (now_service_minutes - time_str_to_service_minutes(stop.departure_time)) > lookback_minutes:
+                continue
             existing = db.get(models.InterdictionStopSnapshot, (interdiction.id, trip_id, stop.station_id))
             if existing is None:
                 db.add(models.InterdictionStopSnapshot(
@@ -875,8 +882,14 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
                 stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + delta)
                 stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
 
+    # Phase A -- directly held trips. `sequence_crossings` threads a single `free_at` forward
+    # through its FCFS walk, so a held trip's own delta already contains, in full, every
+    # earlier retention at this crossing (delta_k = exit_{k-1} - entry_k + delta_{k-1}).
+    # Applying anything else on top of it would shift that trip twice over.
     affected = []
     delayed_trip_ids: list[str] = []
+    directly_held_ids: set[str] = set()
+    holds: list[tuple[str, str, float, float]] = []
     for trip_id, delta, new_entry_sm, new_exit_sm in sequenced:
         _, _, original_entry_sm, _, first_idx, stops = by_trip_id[trip_id]
         if delta:
@@ -885,34 +898,49 @@ def _apply_interdiction(db: Session, interdiction: models.Interdiction, now: dat
             held_original_departure_sm = time_str_to_service_minutes(original_departure_by_key[(trip_id, s_prev_station)])
 
             apply_delta_from_station(trip_id, stops, s_prev_idx, delta)
+            directly_held_ids.add(trip_id)
             delayed_trip_ids.append(trip_id)
-
-            # Gatilho de Cascata por Interdição (Spec 4): the same flat delta propagates to
-            # every later same-direction departure through S_prev, so the headway planned
-            # between consecutive departures at that station is never eaten by this hold.
-            # Unconditional -- does not check auto_regulation_enabled, and does not call
-            # apply_regulation (that's the separate, tapering ramp for the Spec 4 toggle).
-            held_direction = direction_by_trip[trip_id]
-            for other_trip, other_stops in all_trips_with_stops:
-                other_id = other_trip.id
-                if other_id == trip_id or direction_by_trip.get(other_id) != held_direction:
-                    continue
-                other_idx = stop_index_by_trip_station.get((other_id, s_prev_station))
-                if other_idx is None:
-                    continue
-                other_original_departure_sm = time_str_to_service_minutes(
-                    original_departure_by_key[(other_id, s_prev_station)]
-                )
-                if other_original_departure_sm > held_original_departure_sm:
-                    apply_delta_from_station(other_id, other_stops, other_idx, delta)
-                    if other_id not in delayed_trip_ids:
-                        delayed_trip_ids.append(other_id)
+            holds.append((trip_id, s_prev_station, held_original_departure_sm, delta))
         affected.append(InterdictionAffectedTrip(
             trip_id=trip_id,
             entry_time=_service_minutes_to_time_str(new_entry_sm),
             exit_time=_service_minutes_to_time_str(new_exit_sm),
             original_entry_time=_service_minutes_to_time_str(original_entry_sm),
         ))
+
+    # Phase B -- Gatilho de Cascata por Interdição (Spec 4): a hold's flat delta propagates to
+    # every later same-direction departure through S_prev, so the planned headway between
+    # consecutive departures at that station is never eaten by the hold. Unconditional --
+    # does not check auto_regulation_enabled, and does not call apply_regulation (that's the
+    # separate, tapering ramp for the Spec 4 toggle), which is why cascade recipients never
+    # enter `delayed_trip_ids`.
+    #
+    # A trip that is itself directly held is never a cascade target (see Phase A), and a trip
+    # behind several holds receives the LARGEST qualifying delta once -- not the sum, which
+    # would double-count the retentions each delta already accounts for.
+    cascade_by_trip: dict[str, tuple[str, float]] = {}
+    for held_id, s_prev_station, held_original_departure_sm, delta in holds:
+        held_direction = direction_by_trip[held_id]
+        for other_trip, _ in all_trips_with_stops:
+            other_id = other_trip.id
+            if other_id in directly_held_ids or direction_by_trip.get(other_id) != held_direction:
+                continue
+            if (other_id, s_prev_station) not in stop_index_by_trip_station:
+                continue
+            other_original_departure_sm = time_str_to_service_minutes(
+                original_departure_by_key[(other_id, s_prev_station)]
+            )
+            if other_original_departure_sm <= held_original_departure_sm:
+                continue
+            best = cascade_by_trip.get(other_id)
+            if best is None or delta > best[1]:
+                cascade_by_trip[other_id] = (s_prev_station, delta)
+
+    stops_by_trip = {t.id: stops for t, stops in all_trips_with_stops}
+    for other_id, (s_prev_station, delta) in cascade_by_trip.items():
+        apply_delta_from_station(
+            other_id, stops_by_trip[other_id], stop_index_by_trip_station[(other_id, s_prev_station)], delta,
+        )
 
     db.commit()
 

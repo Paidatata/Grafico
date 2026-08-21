@@ -399,3 +399,213 @@ def test_interdiction_delay_does_not_auto_regulate_when_disabled(db_session):
 
     d1 = service.get_trip(db_session, "D1")
     assert d1.stops[0].time == "04:55:00"
+
+
+def _seed_two_holds_in_the_same_direction(db_session):
+    """Four trips whose FCFS order at the band flips occupancy twice: T0 -> A -> C -> B.
+
+    T0 (BFU-RGS) takes the band first; A (RGS-BFU) waits behind it; C (BFU-RGS) then waits
+    behind A; B (RGS-BFU) waits behind C. So A and B are BOTH directly held, share the same
+    direction and the same S_prev (SAN), and B's original SAN departure (05:25) is later than
+    A's (05:10) -- which is exactly the shape that used to make B receive A's delta as a
+    cascade *on top of* its own hold (double-shift + duplicate snapshot PK crash).
+    """
+    init_db(db_session.get_bind())
+    service.import_template(db_session, [
+        TemplateImportTrip(
+            trip_id="T0", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="05:00:00"),
+                TemplateImportStop(station="SAN", time="05:20:00"),
+                TemplateImportStop(station="RGS", time="05:40:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="A", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:00:00"),
+                TemplateImportStop(station="SAN", time="05:10:00"),
+                TemplateImportStop(station="BFU", time="05:30:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="C", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="05:15:00"),
+                TemplateImportStop(station="SAN", time="05:35:00"),
+                TemplateImportStop(station="RGS", time="05:55:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="B", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:15:00"),
+                TemplateImportStop(station="SAN", time="05:25:00"),
+                TemplateImportStop(station="BFU", time="05:45:00"),
+            ],
+        ),
+    ])
+    service.set_current_schedule_id(1)
+    service.perform_daily_reset(db_session, now=datetime(2026, 8, 16, 4, 30, 0))
+
+
+def test_a_trip_held_behind_another_hold_is_shifted_only_once(db_session):
+    _seed_two_holds_in_the_same_direction(db_session)
+
+    # Must not raise: the old code applied B's delta twice (own hold + cascade from A) and
+    # re-inserted B's InterdictionStopSnapshot rows, blowing up the commit with
+    # "UNIQUE constraint failed: interdiction_stop_snapshots".
+    result = service.create_interdiction(
+        db_session, y_top=3500.0, y_bottom=5000.0,
+        start_time="05:00:00", end_time="06:00:00", description="Obra",
+        now=datetime(2026, 8, 16, 4, 30, 0),
+    )
+    affected_by_trip = {a.trip_id: a for a in result.affected_trips}
+    delta_a = (
+        time_str_to_minutes(affected_by_trip["A"].entry_time)
+        - time_str_to_minutes(affected_by_trip["A"].original_entry_time)
+    )
+    delta_b = (
+        time_str_to_minutes(affected_by_trip["B"].entry_time)
+        - time_str_to_minutes(affected_by_trip["B"].original_entry_time)
+    )
+    assert delta_a > 0  # sanity: A is directly held behind T0
+    assert delta_b > 0  # sanity: B is directly held behind C, independently of A
+
+    # B's own sequence_crossings delta already contains every upstream retention at this
+    # crossing (free_at is threaded forward), so B must move by exactly delta_b -- never by
+    # delta_a + delta_b.
+    b_trip = service.get_trip(db_session, "B")
+    b_by_station = {s.station: s for s in b_trip.stops}
+    assert b_by_station["RGS"].time == "05:15:00"  # upstream of S_prev: untouched
+    assert b_by_station["SAN"].arrival_time == "05:25:00"
+    b_shift = time_str_to_minutes(b_by_station["SAN"].time) - time_str_to_minutes("05:25:00")
+    assert b_shift == pytest.approx(delta_b, abs=2 / 60)
+    assert b_shift != pytest.approx(delta_a + delta_b, abs=2 / 60)
+    assert time_str_to_minutes(b_by_station["BFU"].time) - time_str_to_minutes("05:45:00") == pytest.approx(
+        delta_b, abs=2 / 60
+    )
+
+    # And exactly one snapshot row per (trip, station) -- one write, one baseline to revert.
+    snapshot_keys = [
+        (s.trip_id, s.station_id)
+        for s in db_session.query(models.InterdictionStopSnapshot)
+        .filter(models.InterdictionStopSnapshot.interdiction_id == result.interdiction.id)
+        .all()
+    ]
+    assert len(snapshot_keys) == len(set(snapshot_keys))
+    assert ("B", "SAN") in snapshot_keys
+
+
+def test_cascade_recipients_do_not_trigger_auto_regulation(db_session):
+    _seed_two_opposite_trips_plus_later_departures(db_session)
+    service.set_station_turnaround(db_session, "BFU", 5 * 60)
+    service.set_auto_regulation_enabled(db_session, True)
+
+    service.create_interdiction(
+        db_session, y_top=3500.0, y_bottom=5000.0,
+        start_time="05:00:00", end_time="06:00:00", description="Obra",
+        now=datetime(2026, 8, 16, 4, 30, 0),
+    )
+
+    # The directly held trip still regulates its own paired departure (Spec 4 behaviour
+    # that must not regress): TRIP_BFU-RGS_050000 is paired with TRIP_RGS-BFU_050500's
+    # BFU arrival and gets ramped to arrival + 5min turnaround.
+    held = service.get_trip(db_session, "TRIP_RGS-BFU_050500")
+    held_bfu_arrival = next(s.arrival_time for s in held.stops if s.station == "BFU")
+    paired_with_held = service.get_trip(db_session, "TRIP_BFU-RGS_050000")
+    assert time_str_to_minutes(paired_with_held.stops[0].time) == pytest.approx(
+        time_str_to_minutes(held_bfu_arrival) + 5, abs=2 / 60
+    )
+
+    # TRIP_RGS-BFU_060000 is only a *cascade* recipient (headway preservation), never a
+    # directly held trip -- its shifted BFU arrival must not run the tapering regulation
+    # ramp on its paired departure TRIP_BFU-RGS_070000.
+    cascade_recipient = service.get_trip(db_session, "TRIP_RGS-BFU_060000")
+    assert next(s.time for s in cascade_recipient.stops if s.station == "SAN") != "06:10:00"  # sanity
+    paired_with_cascade = service.get_trip(db_session, "TRIP_BFU-RGS_070000")
+    assert paired_with_cascade.stops[0].time == "07:00:00"
+
+
+def _seed_hold_plus_cascade_recipient(db_session):
+    """T0 occupies the band, A (RGS-BFU) is held behind it, R (RGS-BFU) only cascades.
+
+    R crosses after A in the same direction, so sequence_crossings gives it delta 0 (same
+    direction never waits) -- it is purely a cascade recipient at SAN, A's S_prev.
+    """
+    init_db(db_session.get_bind())
+    service.import_template(db_session, [
+        TemplateImportTrip(
+            trip_id="T0", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="05:00:00"),
+                TemplateImportStop(station="SAN", time="05:20:00"),
+                TemplateImportStop(station="RGS", time="05:40:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="A", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:00:00"),
+                TemplateImportStop(station="SAN", time="05:10:00"),
+                TemplateImportStop(station="BFU", time="05:30:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="R", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:05:00"),
+                TemplateImportStop(station="SAN", time="05:15:00"),
+                TemplateImportStop(station="BFU", time="05:35:00"),
+            ],
+        ),
+    ])
+    service.set_current_schedule_id(1)
+    service.perform_daily_reset(db_session, now=datetime(2026, 8, 16, 4, 30, 0))
+
+
+def test_interdiction_writes_respect_the_edit_lookback_floor(db_session):
+    _seed_hold_plus_cascade_recipient(db_session)
+    service.set_edit_lookback_minutes(db_session, 5)
+
+    # now = 05:30, lookback 5min => any stop currently departing before 05:25 is frozen.
+    # A's SAN departure (05:10) and R's SAN departure (05:15) are both past that floor;
+    # A's BFU stop (05:30) and R's BFU stop (05:35) are not.
+    result = service.create_interdiction(
+        db_session, y_top=3500.0, y_bottom=5000.0,
+        start_time="05:00:00", end_time="06:00:00", description="Obra",
+        now=datetime(2026, 8, 16, 5, 30, 0),
+    )
+    affected_by_trip = {a.trip_id: a for a in result.affected_trips}
+    delta = (
+        time_str_to_minutes(affected_by_trip["A"].entry_time)
+        - time_str_to_minutes(affected_by_trip["A"].original_entry_time)
+    )
+    assert delta > 0  # sanity: A is held
+
+    held = {s.station: s for s in service.get_trip(db_session, "A").stops}
+    recipient = {s.station: s for s in service.get_trip(db_session, "R").stops}
+
+    # Frozen (older than the lookback floor): neither the direct hold nor the cascade may
+    # rewrite these -- _revert_interdiction would refuse to undo them, so writing them would
+    # be permanent, unrecoverable drift.
+    assert held["SAN"].time == "05:10:00"
+    assert recipient["SAN"].time == "05:15:00"
+
+    # Still inside the window: written normally.
+    assert time_str_to_minutes(held["BFU"].time) - time_str_to_minutes("05:30:00") == pytest.approx(delta, abs=2 / 60)
+    assert time_str_to_minutes(recipient["BFU"].time) - time_str_to_minutes("05:35:00") == pytest.approx(
+        delta, abs=2 / 60
+    )
+
+    # No snapshot for a stop that was never written (nothing to revert), one for each write.
+    snapshot_keys = {
+        (s.trip_id, s.station_id)
+        for s in db_session.query(models.InterdictionStopSnapshot)
+        .filter(models.InterdictionStopSnapshot.interdiction_id == result.interdiction.id)
+        .all()
+    }
+    assert ("A", "SAN") not in snapshot_keys
+    assert ("R", "SAN") not in snapshot_keys
+    assert ("A", "BFU") in snapshot_keys
+    assert ("R", "BFU") in snapshot_keys
