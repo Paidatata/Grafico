@@ -10,12 +10,18 @@ class StopOut(BaseModel):
     station: str
     time: str
     arrival_time: str
+    # DXF Y coordinate of the stop's station. The frontend maps this to an SVG Y
+    # pixel (`dxfYToSvg`) for every polyline point and drag node, so it must always
+    # be present or the chart renders nothing.
     y_coord: float
 
 
 class TripOut(BaseModel):
     trip_id: str
     direction: str
+    # Field code (e.g. "P15", "R2", "M4") — see parser.py's compute_train_codes for
+    # the destination/parity convention. This, not trip_id, is what dispatchers
+    # recognize; the frontend displays it instead of the internal trip_id.
     train_code: str
     start_time: str
     end_time: str
