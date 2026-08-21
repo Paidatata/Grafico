@@ -26,6 +26,16 @@ Depende inteiramente do pareamento chegada↔partida já definido na **Spec 3 �
 
 Mesmo algoritmo nos dois modos — muda só quem aciona.
 
+### Gatilho de Cascata por Interdição (Integração Spec 2a)
+
+> **Emenda (2026-08-20, correção de regressão):** este gatilho é **incondicional** — roda mesmo com `auto_regulation_enabled = false`. Não é o mesmo algoritmo da rampa (seção "Algoritmo da rampa" abaixo): a rampa dilui o atraso proporcionalmente até zerar no trem-âncora; aqui o objetivo é preservação **estrita** de headway, então o delta propagado é sempre o mesmo valor para todos os trens atingidos, sem diluição. É uma operação própria, disparada pela Spec 2a, não uma chamada a `apply_regulation`.
+
+Quando o algoritmo de interdição (Spec 2a, Passo 2) retém um trem numa estação `S_prev` aplicando um `delta` ao seu `departure_time`, o sistema deve propagar esse mesmo `delta` para o resto da frota naquele sentido, para manter a regularidade do carrossel no cenário de degradação:
+
+- Para toda viagem ao vivo do **mesmo sentido** que também tem `S_prev` entre suas paradas, cujo `departure_time` original em `S_prev` seja **posterior** ao `departure_time` original (antes do delta) do trem retido em `S_prev`: aplica-se o **mesmo `delta`**, com a mesma regra do Passo 2 (paradas antes de `S_prev` intocadas; `S_prev.arrival_time` intocado; `S_prev.departure_time` e tudo a jusante somam `delta`).
+- O resultado preserva exatamente o intervalo (headway) planejado entre partidas consecutivas em `S_prev` — nenhuma partida "herda" um intervalo maior ou menor do que tinha originalmente por causa da retenção.
+- Múltiplas retenções na mesma interdição (uma para cada trem que efetivamente esperou) propagam cada uma o seu próprio `delta`; os efeitos se acumulam para quem está depois de todas elas.
+
 ---
 
 ## Algoritmo da rampa

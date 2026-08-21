@@ -79,15 +79,24 @@ Para cada viagem ao vivo (excluindo as já fora do escopo pelo caso de borda "tr
 
 **Trem já dentro da interdição no momento da criação/edição:** se `entry_time <= now < exit_time` (comparado ao horário em que a interdição está sendo aplicada), essa viagem fica **fora do cálculo automático** — o despachante ajusta manualmente arrastando os nós, porque só ele sabe o que já passou e o que já parou no campo. Isso vale para os dois sentidos; se houver um trem de cada sentido já dentro simultaneamente, ambos ficam fora do automático. No gatilho planejado (grade futura) isso normalmente não ocorre, já que nenhum trem "está circulando" ainda.
 
-### Passo 2 — Sequenciar
+### Passo 2 — Sequenciar e Reter na Estação (S_prev)
+
+> **Emenda (2026-08-20, correção de regressão):** a primeira implementação deste passo aplicava o delta a partir da parada logo *após* a faixa (deixando o trecho estação-anterior→estação-depois com velocidade alterada, um erro de modelagem — trens não mudam de velocidade pra absorver espera) e depois, numa segunda tentativa, deslocava a viagem inteira a partir da própria origem dela (o que resolvia a velocidade mas destruía o headway em relação aos trens seguintes do mesmo sentido, já que só aquele trem se movia). Este texto substitui as duas tentativas: o trem espera parado numa **estação real** (nunca no meio da via), e a preservação do headway da frota vira responsabilidade explícita da Spec 4 (ver `2026-08-16-regulacao-de-partidas-design.md`, seção "Gatilho de Cascata por Interdição").
 
 Ordena as candidatas remanescentes por `entry_time` ascendente — ordem sempre pelo horário nativo (não reavaliada depois de aplicar atrasos, é FCFS pelo horário de entrada natural). Percorre em ordem mantendo `ocupante` (direção) e `livre_em` (quando a faixa libera), inicialmente vazios (faixa livre):
 
 - Mesma direção do ocupante atual → passa sem espera; atualiza `livre_em` para o maior entre o atual e o `exit_time` desta viagem.
 - Direção oposta e `entry_time >= livre_em` → passa sem espera; vira o novo ocupante (`ocupante = direção`, `livre_em = exit_time`).
-- Direção oposta e `entry_time < livre_em` → **retida**: `delta = livre_em - entry_time`. Salva snapshot (se ainda não salvo) da parada real logo após a faixa e de todas as seguintes desta viagem, depois aplica `delta` em `arrival_time`/`departure_time` de cada uma (mesmo loop de propagação que `shift_stop` já usa hoje — a parada real antes da faixa não muda). Vira o novo ocupante, com `livre_em = exit_time + delta`.
+- Direção oposta e `entry_time < livre_em` → **retida**:
+  - `delta = livre_em - entry_time`.
+  - Identifica-se a **Estação Anterior (S_prev)**: a última parada real que o trem fará antes de cruzar a faixa da interdição. O trem não pode esperar no meio da via — ele aguarda obrigatoriamente na plataforma desta estação.
+  - Salva snapshot (se ainda não salvo) da parada `S_prev` e de todas as paradas seguintes desta viagem.
+  - **Aplicação do delta:** o `arrival_time` em `S_prev` permanece o original (o trem chega na hora certa). Soma-se `delta` ao `departure_time` de `S_prev` e aos horários (chegada e partida) de todas as paradas a jusante. Paradas **antes** de `S_prev` não mudam.
+  - Vira o novo ocupante, com `livre_em = exit_time + delta`.
 
 **Premissa assumida:** nunca há disputa entre dois trens do mesmo sentido — só a oposição de sentidos gera espera.
+
+**Preservação de headway:** reter um trem em `S_prev` não pode, por si só, "engolir" o intervalo planejado para os trens seguintes do mesmo sentido. Ver `2026-08-16-regulacao-de-partidas-design.md`, seção "Gatilho de Cascata por Interdição", para a propagação obrigatória desse mesmo `delta` à frota.
 
 ### Passo 3 — Persistir e notificar
 
@@ -123,12 +132,15 @@ Clicar numa interdição existente reabre o mesmo diálogo, pré-preenchido, com
 
 ### Desenho
 
+> **Emenda (2026-08-20, correção de regressão):** substitui a versão anterior, que desenhava o "dogleg" (espera) na borda do retângulo — geometricamente inválido, já que a borda geralmente não coincide com nenhuma estação real, então o trecho de espera não correspondia a lugar nenhum onde um trem pudesse fisicamente estar parado.
+
 `<rect>` SVG semitransparente vermelho, posicionado com `timeToX`/`dxfYToSvg` a partir de `y_top`/`y_bottom`/`start_time`/`end_time`. Descrição como rótulo (tooltip ou texto pequeno sobre o retângulo).
 
-Para cada viagem afetada (a resposta do backend trouxe `entry_time`/`exit_time`), o trecho do polyline entre as duas estações reais que cercam a faixa passa a ter 3 segmentos em vez de 1:
-1. Diagonal da estação anterior até `(entry_time, borda)`
-2. Reto (parado) de `entry_time` até `exit_time`, na borda
-3. Diagonal de `exit_time` até a próxima estação real
+O frontend não desenha mais doglegs (linhas horizontais de espera) nas bordas do retângulo vermelho. Para cada viagem afetada:
+
+- A espera visual ocorre na estação `S_prev` (a mesma que o Passo 2 usa para aplicar o delta).
+- Desenha-se uma linha horizontal (espera na plataforma) exatamente sobre a `station-grid-line` correspondente a `S_prev`, indo do `arrival_time` (original, sem o delta) até o novo `departure_time` (que recebeu o delta).
+- Dali, a reta da viagem cruza a interdição com sua velocidade de cruzeiro (inclinação) original, tocando apenas as bordas da zona vermelha sem quebras — nenhum vértice extra é necessário na própria borda.
 
 ### Tempo real
 
