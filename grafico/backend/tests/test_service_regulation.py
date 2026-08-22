@@ -51,10 +51,19 @@ def _seed_turnaround_scenario(db_session):
     service.set_station_turnaround(db_session, "BFU", 20 * 60)
 
 
+def _test_shift_single_trip(db_session, trip_id, station_id, new_time):
+    stops = service._trip_stops(db_session, trip_id)
+    idx = next(i for i, s in enumerate(stops) if s.station_id == station_id)
+    delta = service.time_str_to_minutes(new_time) - service.time_str_to_minutes(stops[idx].departure_time)
+    for stop in stops[idx:]:
+        stop.arrival_time = service.minutes_to_time_str(service.time_str_to_minutes(stop.arrival_time) + delta)
+        stop.departure_time = service.minutes_to_time_str(service.time_str_to_minutes(stop.departure_time) + delta)
+    db_session.commit()
+
 def test_apply_regulation_ramps_intermediate_departures(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
 
     updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
     updated_by_id = {t.trip_id: t for t in updated}
@@ -107,7 +116,7 @@ def test_apply_regulation_mirrors_anchor_delta_onto_later_departures(db_session)
     ])
     service.set_station_turnaround(db_session, "BFU", 20 * 60)
     now = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
 
     updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
     updated_by_id = {t.trip_id: t for t in updated}
@@ -133,7 +142,7 @@ def test_apply_regulation_is_noop_when_no_violation(db_session):
 def test_apply_regulation_never_compresses_a_departure_into_the_past(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 6, 1, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=datetime(2026, 8, 16, 4, 30, 0))
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
 
     updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
     updated_by_id = {t.trip_id: t for t in updated}
@@ -152,14 +161,15 @@ def test_shift_stop_auto_regulates_when_enabled(db_session):
     assert d2.stops[0].time == "06:25:00"
 
 
-def test_shift_stop_does_not_auto_regulate_when_disabled(db_session):
+def test_shift_stop_performs_manual_cascade_when_auto_regulation_disabled(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 4, 30, 0)
 
     service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
 
     d2 = service.get_trip(db_session, "D2")
-    assert d2.stops[0].time == "06:15:00"
+    # Manual cascade logic applies +15 min delta to D2
+    assert d2.stops[0].time == "06:30:00"
 
 
 def test_apply_regulation_is_noop_when_station_turnaround_not_configured(db_session):
@@ -184,7 +194,7 @@ def test_apply_regulation_is_noop_when_station_turnaround_not_configured(db_sess
     # an operator excluding it from turnaround pairing/validation.
     service.set_station_turnaround(db_session, "BFU", None)
     now = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
 
     updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
 
@@ -196,7 +206,7 @@ def test_apply_regulation_is_noop_when_station_turnaround_not_configured(db_sess
 def test_apply_regulation_targets_arrival_time_not_departure_time(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
 
     # Simulate arrival_time and departure_time diverging at the arrival stop (e.g. a future
     # dwell-time feature). The ramp's target must be anchored on arrival_time; this drift
@@ -218,7 +228,7 @@ def test_apply_regulation_targets_arrival_time_not_departure_time(db_session):
 def test_apply_regulation_sorts_arrivals_by_arrival_time_not_departure_time(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
 
     # Corrupt A1's stored departure_time only (arrival_time stays 05:30:00) so that sorting
     # arrivals by departure_time would rank A1 after ARRIVAL, flipping which departure gets
@@ -241,12 +251,12 @@ def test_apply_regulation_sorts_arrivals_by_arrival_time_not_departure_time(db_s
 def test_apply_regulation_compresses_departures_when_excess_becomes_negative(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
     service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)  # prior ramp: D1->06:05, D2->06:25
 
     # Arrival recovers (less delay): the required target shrinks below D2's already-ramped
     # departure, so re-running regulation must compress D1/D2 back down, anchor still exact.
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "05:57:00", now=now)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "05:57:00")
     updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
     updated_by_id = {t.trip_id: t for t in updated}
 
@@ -296,11 +306,11 @@ def test_apply_regulation_skips_early_departures_from_stabled_trains(db_session)
 def test_apply_regulation_redistributes_compression_when_a_departure_cannot_recede(db_session):
     _seed_turnaround_scenario(db_session)
     now1 = datetime(2026, 8, 16, 4, 30, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now1)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "06:05:00")
     service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now1)  # prior ramp: D1->06:05, D2->06:25
 
     now2 = datetime(2026, 8, 16, 6, 4, 0)
-    service.shift_stop(db_session, "ARRIVAL", "BFU", "05:31:00", now=now2)
+    _test_shift_single_trip(db_session, "ARRIVAL", "BFU", "05:31:00")
 
     updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now2)
     updated_by_id = {t.trip_id: t for t in updated}

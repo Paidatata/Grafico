@@ -3,9 +3,10 @@
 // ==========================================================================
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// Dimensions
-const CHART_WIDTH = 12000; // Represents 04:00 to 24:00 (20 hours * 600px/hour)
-const CHART_HEIGHT = 800;
+// Dimensions & Scales
+let pixelsPerMinute = 10;
+let CHART_WIDTH = pixelsPerMinute * 24 * 60;
+let CHART_HEIGHT = 800;
 
 // Margins
 const MARGIN_LEFT = 150; // For station names
@@ -13,8 +14,24 @@ const MARGIN_RIGHT = 100;
 const MARGIN_TOP = 50;
 const MARGIN_BOTTOM = 50;
 
-const USABLE_WIDTH = CHART_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
-const USABLE_HEIGHT = CHART_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
+let USABLE_WIDTH = CHART_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+let USABLE_HEIGHT = CHART_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
+
+function updateDimensions() {
+    CHART_WIDTH = pixelsPerMinute * 24 * 60 + MARGIN_LEFT + MARGIN_RIGHT;
+    USABLE_WIDTH = CHART_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+    
+    let container = document.getElementById("chart-container");
+    if (!container) {
+        container = document.getElementById("schedule-editor-container");
+    }
+    if (container) {
+        CHART_HEIGHT = Math.max(480, container.clientHeight);
+    } else {
+        CHART_HEIGHT = 800;
+    }
+    USABLE_HEIGHT = CHART_HEIGHT - MARGIN_TOP - MARGIN_BOTTOM;
+}
 
 // Scales
 // The chart spans one full service day: 04:00 today through 04:00 the next day.
@@ -38,13 +55,12 @@ const TOTAL_HOURS = END_HOUR - START_HOUR;
 // timeStrToServiceMinutes modulo would otherwise collapse onto the left edge.
 function timeToX(timeStr) {
     const serviceMinutes = timeStrToServiceMinutes(timeStr);
-    const pct = serviceMinutes / (TOTAL_HOURS * 60);
-    return MARGIN_LEFT + pct * USABLE_WIDTH;
+    return MARGIN_LEFT + serviceMinutes * pixelsPerMinute;
 }
 
 function xToTime(x) {
-    const pct = Math.max(0, Math.min(1, (x - MARGIN_LEFT) / USABLE_WIDTH));
-    const serviceMinutes = pct * TOTAL_HOURS * 60;
+    let serviceMinutes = (x - MARGIN_LEFT) / pixelsPerMinute;
+    serviceMinutes = Math.max(0, Math.min(serviceMinutes, TOTAL_HOURS * 60));
     const rawMinutes = (serviceMinutes + START_HOUR * 60) % (24 * 60);
 
     const h = Math.floor(rawMinutes / 60);
@@ -70,8 +86,7 @@ function xToTimeSnapped(x, snapMinutes = 5) {
 // hit the modulo boundary exactly at h=28 and draw the last gridline on top of the
 // first instead of at the right edge.
 function serviceOffsetMinutesToX(offsetMinutes) {
-    const pct = offsetMinutes / (TOTAL_HOURS * 60);
-    return MARGIN_LEFT + pct * USABLE_WIDTH;
+    return MARGIN_LEFT + offsetMinutes * pixelsPerMinute;
 }
 
 function timeStrToMinutes(timeStr) {
@@ -379,6 +394,7 @@ function renderScheduleEditor() {
 }
 
 function drawScheduleEditorChart(container) {
+    updateDimensions();
     container.innerHTML = "";
     const svg = document.createElementNS(SVG_NS, "svg");
     svg.setAttribute("width", CHART_WIDTH);
@@ -647,7 +663,10 @@ let appState = {
     departFromMode: null,
     autoRegulationEnabled: false,
     interdictionCreationMode: null,
-    interdictions: []
+    interdictionResizeMode: null,
+    interdictions: [],
+    showProgrammed: false,
+    programmedTrips: []
 };
 
 // ==========================================================================
@@ -694,6 +713,88 @@ function clearInterdictionPreview() {
     }
 }
 
+function startInterdictionResize(e, interdiction, cornerType) {
+    const x1 = timeToX(interdiction.start_time);
+    const x2 = timeToX(interdiction.end_time);
+    const y1 = dxfYToSvg(interdiction.y_top, appState.selectedLine);
+    const y2 = dxfYToSvg(interdiction.y_bottom, appState.selectedLine);
+    
+    appState.interdictionResizeMode = {
+        interdiction: interdiction,
+        cornerType: cornerType,
+        originalLeft: Math.min(x1, x2),
+        originalRight: Math.max(x1, x2),
+        originalTop: Math.min(y1, y2),
+        originalBottom: Math.max(y1, y2),
+        startX: e.clientX,
+        startY: e.clientY
+    };
+}
+
+function onInterdictionResize(e) {
+    if (!appState.interdictionResizeMode) return;
+    const mode = appState.interdictionResizeMode;
+    const dx = e.clientX - mode.startX;
+    const dy = e.clientY - mode.startY;
+    
+    let newLeft = mode.originalLeft;
+    let newRight = mode.originalRight;
+    let newTop = mode.originalTop;
+    let newBottom = mode.originalBottom;
+
+    if (mode.cornerType.includes("left")) newLeft += dx;
+    if (mode.cornerType.includes("right")) newRight += dx;
+    if (mode.cornerType.includes("top")) newTop += dy;
+    if (mode.cornerType.includes("bottom")) newBottom += dy;
+    
+    if (newRight < newLeft) {
+        let tmp = newLeft; newLeft = newRight; newRight = tmp;
+        mode.cornerType = mode.cornerType.replace("left", "temp").replace("right", "left").replace("temp", "right");
+        mode.startX = e.clientX;
+        mode.originalLeft = newLeft;
+        mode.originalRight = newRight;
+    }
+    if (newBottom < newTop) {
+        let tmp = newTop; newTop = newBottom; newBottom = tmp;
+        mode.cornerType = mode.cornerType.replace("top", "temp").replace("bottom", "top").replace("temp", "bottom");
+        mode.startY = e.clientY;
+        mode.originalTop = newTop;
+        mode.originalBottom = newBottom;
+    }
+
+    mode.interdiction.start_time = xToTime(newLeft);
+    mode.interdiction.end_time = xToTime(newRight);
+    
+    const dxfY1 = svgYToDxfY(newTop);
+    const dxfY2 = svgYToDxfY(newBottom);
+    mode.interdiction.y_top = Math.max(dxfY1, dxfY2);
+    mode.interdiction.y_bottom = Math.min(dxfY1, dxfY2);
+
+    renderChart();
+}
+
+function onInterdictionResizeEnd(e) {
+    if (!appState.interdictionResizeMode) return;
+    const interdiction = appState.interdictionResizeMode.interdiction;
+    appState.interdictionResizeMode = null;
+
+    fetch(`/api/interdictions/${interdiction.id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            y_top: interdiction.y_top,
+            y_bottom: interdiction.y_bottom,
+            start_time: interdiction.start_time,
+            end_time: interdiction.end_time,
+            description: interdiction.description
+        })
+    })
+    .then(r => { 
+        if (!r.ok) return r.json().then(b => Promise.reject(new Error(b.detail))); 
+        return reloadScheduleFromServer(); 
+    })
+    .catch(err => alert("Falha ao salvar interdição: " + err.message));
+}
+
 function onChartClickForInterdiction(e) {
     if (!appState.interdictionCreationMode) return;
 
@@ -725,6 +826,8 @@ function openInterdictionDialog(firstPoint, secondPoint, existing = null) {
         box.innerHTML = `
             <h3>Editar Interdição</h3>
             <div class="dialog-field"><label>Descrição</label><input id="id-description" value="${existing.description}"></div>
+            <div class="dialog-field"><label>Posição Y (Topo)</label><input id="id-ytop" type="number" step="0.01" value="${existing.y_top}"></div>
+            <div class="dialog-field"><label>Posição Y (Base)</label><input id="id-ybottom" type="number" step="0.01" value="${existing.y_bottom}"></div>
             <div class="dialog-field"><label>Hora inicial</label><input id="id-start" type="time" value="${existing.start_time.substring(0, 5)}"></div>
             <div class="dialog-field"><label>Hora final</label><input id="id-end" type="time" value="${existing.end_time.substring(0, 5)}"></div>
             <div class="dialog-actions">
@@ -748,7 +851,8 @@ function openInterdictionDialog(firstPoint, secondPoint, existing = null) {
             fetch(`/api/interdictions/${existing.id}`, {
                 method: "PUT", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    y_top: existing.y_top, y_bottom: existing.y_bottom,
+                    y_top: parseFloat(document.getElementById("id-ytop").value),
+                    y_bottom: parseFloat(document.getElementById("id-ybottom").value),
                     start_time: document.getElementById("id-start").value + ":00",
                     end_time: document.getElementById("id-end").value + ":00",
                     description: document.getElementById("id-description").value,
@@ -792,17 +896,42 @@ function drawInterdictions(svg) {
         const y1 = dxfYToSvg(interdiction.y_top, appState.selectedLine);
         const y2 = dxfYToSvg(interdiction.y_bottom, appState.selectedLine);
 
+        const svgLeft = Math.min(x1, x2);
+        const svgRight = Math.max(x1, x2);
+        const svgTop = Math.min(y1, y2);
+        const svgBottom = Math.max(y1, y2);
+
         const rect = document.createElementNS(SVG_NS, "rect");
-        rect.setAttribute("x", Math.min(x1, x2));
-        rect.setAttribute("y", Math.min(y1, y2));
-        rect.setAttribute("width", Math.abs(x2 - x1));
-        rect.setAttribute("height", Math.abs(y2 - y1));
+        rect.setAttribute("x", svgLeft);
+        rect.setAttribute("y", svgTop);
+        rect.setAttribute("width", Math.abs(svgRight - svgLeft));
+        rect.setAttribute("height", Math.abs(svgBottom - svgTop));
         rect.className.baseVal = "interdiction-rect";
-        rect.addEventListener("click", (e) => {
+        rect.addEventListener("dblclick", (e) => {
             e.stopPropagation();
             openInterdictionDialog(null, null, interdiction);
         });
         svg.appendChild(rect);
+
+        const handles = [
+            { cursor: 'nwse', x: svgLeft, y: svgTop, type: 'top-left' },
+            { cursor: 'nesw', x: svgRight, y: svgTop, type: 'top-right' },
+            { cursor: 'nesw', x: svgLeft, y: svgBottom, type: 'bottom-left' },
+            { cursor: 'nwse', x: svgRight, y: svgBottom, type: 'bottom-right' }
+        ];
+
+        handles.forEach(h => {
+            const circle = document.createElementNS(SVG_NS, "circle");
+            circle.setAttribute("cx", h.x);
+            circle.setAttribute("cy", h.y);
+            circle.setAttribute("r", 5);
+            circle.className.baseVal = `interdiction-handle ${h.cursor}`;
+            circle.addEventListener("mousedown", (e) => {
+                e.stopPropagation();
+                startInterdictionResize(e, interdiction, h.type);
+            });
+            svg.appendChild(circle);
+        });
 
         const label = document.createElementNS(SVG_NS, "text");
         label.setAttribute("x", Math.min(x1, x2) + 6);
@@ -833,6 +962,19 @@ function toggleAutoRegulation() {
             appState.autoRegulationEnabled = data.enabled;
             syncAutoRegulationIcon();
         });
+}
+
+function syncAutoRegulationIcon() {
+    const btn = document.getElementById("btn-mock-real");
+    if (btn) btn.classList.toggle("active", appState.showRealized);
+    renderChart();
+}
+
+function toggleProgrammed() {
+    appState.showProgrammed = !appState.showProgrammed;
+    const btn = document.getElementById("btn-toggle-programmed");
+    if (btn) btn.classList.toggle("active", appState.showProgrammed);
+    renderChart();
 }
 
 function syncAutoRegulationIcon() {
@@ -1165,13 +1307,16 @@ window.onload = function() {
 };
 
 function loadDefaultSchedule() {
-    fetch("/api/schedule")
-        .then(response => {
-            if (!response.ok) throw new Error("Server returned " + response.status);
-            return response.json();
-        })
-        .then(data => {
-            initSchedule(data);
+    Promise.all([
+        fetch("/api/schedule").then(r => {
+            if (!r.ok) throw new Error("Server returned " + r.status);
+            return r.json();
+        }),
+        fetch("/api/schedule/programmed").then(r => r.ok ? r.json() : { trips: [] })
+    ])
+    .then(([liveData, programmedData]) => {
+        appState.programmedTrips = programmedData.trips || [];
+        initSchedule(liveData);
             connectLiveUpdates();
             loadLookbackSetting();
             loadAutoRegulationSetting();
@@ -1401,6 +1546,7 @@ function selectTrip(tripId) {
 // Chart Rendering (SVG Generation)
 // ==========================================================================
 function renderChart() {
+    updateDimensions();
     const container = document.getElementById("chart-container");
     const oldScrollLeft = container.scrollLeft;
     container.innerHTML = ""; // Clear
@@ -1417,8 +1563,11 @@ function renderChart() {
     // Attach general mouse up/move listener to SVG for dragging
     svg.addEventListener("mousemove", onNodeDrag);
     svg.addEventListener("mousemove", onInterdictionDragPreview);
+    svg.addEventListener("mousemove", onInterdictionResize);
     svg.addEventListener("mouseup", onNodeDragEnd);
     svg.addEventListener("mouseleave", onNodeDragEnd);
+    svg.addEventListener("mouseup", onInterdictionResizeEnd);
+    svg.addEventListener("mouseleave", onInterdictionResizeEnd);
     svg.addEventListener("click", onChartClickForInterdiction);
     svg.addEventListener("contextmenu", (e) => {
         if (appState.interdictionCreationMode) return;
@@ -1441,6 +1590,14 @@ function renderChart() {
     container.scrollLeft = oldScrollLeft;
 
     drawGrid(svg);
+    
+    // Draw realized actual paths (if toggled)
+    if (appState.showProgrammed) {
+        drawProgrammedPaths(svg);
+    }
+    if (appState.showRealized) {
+        drawRealizedPaths(svg);
+    }
     drawTrainPaths(svg);
     drawTurnaroundConnectors(svg);
     drawInterdictions(svg);
@@ -1492,54 +1649,81 @@ function drawGrid(svg) {
         svg.appendChild(labelRight);
     });
     
-    // 2. Draw vertical time grid lines (every hour and every 10 minutes)
-    // h runs past 24 up to END_HOUR (28) to reach the service day's 04:00-next-day
-    // right edge; displayHour wraps it back to a real clock hour for the label text,
-    // while the X position uses the unwrapped offset (see serviceOffsetMinutesToX).
+    // 2. Draw vertical time grid lines and labels according to zoom level
+    let interval = 60;
+    if (pixelsPerMinute >= 40) interval = 5;
+    else if (pixelsPerMinute >= 20) interval = 10;
+    else if (pixelsPerMinute >= 10) interval = 15;
+    else if (pixelsPerMinute >= 4) interval = 30;
+
     for (let h = START_HOUR; h <= END_HOUR; h++) {
         const displayHour = h % 24;
-        const x = serviceOffsetMinutesToX((h - START_HOUR) * 60);
+        const isEnd = (h === END_HOUR);
+        const maxMin = isEnd ? 0 : 59;
+        
+        for (let m = 0; m <= maxMin; m += interval) {
+            const x = serviceOffsetMinutesToX((h - START_HOUR) * 60 + m);
+            const isMajor = (m === 0);
 
-        const line = document.createElementNS(SVG_NS, "line");
-        line.setAttribute("x1", x);
-        line.setAttribute("y1", MARGIN_TOP);
-        line.setAttribute("x2", x);
-        line.setAttribute("y2", CHART_HEIGHT - MARGIN_BOTTOM);
-        line.className.baseVal = "grid-line-major";
-        svg.appendChild(line);
+            const line = document.createElementNS(SVG_NS, "line");
+            line.setAttribute("x1", x);
+            line.setAttribute("y1", MARGIN_TOP);
+            line.setAttribute("x2", x);
+            line.setAttribute("y2", CHART_HEIGHT - MARGIN_BOTTOM);
+            line.className.baseVal = isMajor ? "grid-line-major" : "grid-line-minor";
+            svg.appendChild(line);
 
-        // Hour label text at top and bottom
-        const topLabel = document.createElementNS(SVG_NS, "text");
-        topLabel.setAttribute("x", x);
-        topLabel.setAttribute("y", MARGIN_TOP - 15);
-        topLabel.setAttribute("text-anchor", "middle");
-        topLabel.className.baseVal = "time-label";
-        topLabel.textContent = `${String(displayHour).padStart(2, '0')}:00`;
-        svg.appendChild(topLabel);
+            // Draw labels for major lines, or for minor lines if zoomed in enough
+            if (isMajor || pixelsPerMinute >= 10) {
+                const text = `${String(displayHour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                
+                const topLabel = document.createElementNS(SVG_NS, "text");
+                topLabel.setAttribute("x", x);
+                topLabel.setAttribute("y", MARGIN_TOP - 15);
+                topLabel.setAttribute("text-anchor", "middle");
+                topLabel.className.baseVal = "time-label";
+                topLabel.textContent = text;
+                svg.appendChild(topLabel);
 
-        const bottomLabel = document.createElementNS(SVG_NS, "text");
-        bottomLabel.setAttribute("x", x);
-        bottomLabel.setAttribute("y", CHART_HEIGHT - MARGIN_BOTTOM + 25);
-        bottomLabel.setAttribute("text-anchor", "middle");
-        bottomLabel.className.baseVal = "time-label";
-        bottomLabel.textContent = `${String(displayHour).padStart(2, '0')}:00`;
-        svg.appendChild(bottomLabel);
-
-        // Draw minute minor lines (every 10 minutes)
-        if (h < END_HOUR) {
-            for (let m = 10; m < 60; m += 10) {
-                const xm = serviceOffsetMinutesToX((h - START_HOUR) * 60 + m);
-
-                const minLine = document.createElementNS(SVG_NS, "line");
-                minLine.setAttribute("x1", xm);
-                minLine.setAttribute("y1", MARGIN_TOP);
-                minLine.setAttribute("x2", xm);
-                minLine.setAttribute("y2", CHART_HEIGHT - MARGIN_BOTTOM);
-                minLine.className.baseVal = "grid-line-minor";
-                svg.appendChild(minLine);
+                const bottomLabel = document.createElementNS(SVG_NS, "text");
+                bottomLabel.setAttribute("x", x);
+                bottomLabel.setAttribute("y", CHART_HEIGHT - MARGIN_BOTTOM + 25);
+                bottomLabel.setAttribute("text-anchor", "middle");
+                bottomLabel.className.baseVal = "time-label";
+                bottomLabel.textContent = text;
+                svg.appendChild(bottomLabel);
             }
         }
     }
+}
+
+function drawProgrammedPaths(svg) {
+    const lineStations = stations[appState.selectedLine].map(s => s.id);
+
+    appState.programmedTrips.forEach(trip => {
+        // Filter out trips not on this line (unless unified)
+        if (appState.selectedLine !== "Line 710") {
+            const hasStart = lineStations.includes(trip.stops[0].station);
+            const hasEnd = lineStations.includes(trip.stops[trip.stops.length - 1].station);
+            if (!hasStart || !hasEnd) return;
+        }
+
+        const pointsArray = [];
+        trip.stops.forEach(stop => {
+            const isStationOnLine = lineStations.includes(stop.station);
+            if (appState.selectedLine === "Line 710" || isStationOnLine) {
+                const svgY = getStopY(stop, appState.selectedLine);
+                pointsArray.push(`${timeToX(stop.time)},${svgY}`);
+            }
+        });
+
+        if (pointsArray.length < 2) return;
+
+        const polyline = document.createElementNS(SVG_NS, "polyline");
+        polyline.setAttribute("points", pointsArray.join(" "));
+        polyline.className.baseVal = "train-path-programmed";
+        svg.appendChild(polyline);
+    });
 }
 
 function getStopY(stop, lineKey) {
@@ -1556,8 +1740,14 @@ function getStopY(stop, lineKey) {
 }
 
 function splitTripAtNow(trip, selectedLine) {
+    const lineStations = stations[selectedLine].map(s => s.id);
     const nowX = timeToX(getReferenceTime());
-    const stopsWithCoords = (trip.stops || []).map(stop => ({
+    
+    const filteredStops = (trip.stops || []).filter(stop => 
+        selectedLine === "Line 710" || lineStations.includes(stop.station)
+    );
+
+    const stopsWithCoords = filteredStops.map(stop => ({
         x: timeToX(stop.time),
         y: getStopY(stop, selectedLine)
     }));
@@ -1597,8 +1787,9 @@ function drawTrainPaths(svg) {
             const suppressedBefore = trip.stops.slice(0, Math.max(0, first + 1));
             const suppressedAfter = trip.stops.slice(Math.max(0, last), trip.stops.length);
             [suppressedBefore, suppressedAfter].forEach(segment => {
-                if (segment.length < 2) return;
-                const points = segment.map(s => `${timeToX(s.time)},${getStopY(s, appState.selectedLine)}`).join(" ");
+                const filteredSegment = segment.filter(s => appState.selectedLine === "Line 710" || lineStations.includes(s.station));
+                if (filteredSegment.length < 2) return;
+                const points = filteredSegment.map(s => `${timeToX(s.time)},${getStopY(s, appState.selectedLine)}`).join(" ");
                 const dashed = document.createElementNS(SVG_NS, "polyline");
                 dashed.setAttribute("points", points);
                 dashed.className.baseVal = "train-path-suppressed";
@@ -1866,6 +2057,10 @@ function onNodeDrag(e) {
 
     // Update current stop time
     trip.stops[stopIdx].time = newTimeStr;
+    if (trip.stops[stopIdx].arrival_time) {
+        const originalArrivalTime = timeStrToMinutes(appState.dragNode.dragStartStops[stopIdx].arrival_time);
+        trip.stops[stopIdx].arrival_time = minutesToTimeStr(originalArrivalTime + deltaMinutes);
+    }
     trip.stops[stopIdx].x_coord = newX;
 
     // Propagate time delta (+D minutes) to all downstream stops
@@ -1875,6 +2070,10 @@ function onNodeDrag(e) {
         const updatedTimeStr = minutesToTimeStr(updatedTimeMinutes);
 
         trip.stops[i].time = updatedTimeStr;
+        if (trip.stops[i].arrival_time) {
+            const originalArrival = timeStrToMinutes(appState.dragNode.dragStartStops[i].arrival_time);
+            trip.stops[i].arrival_time = minutesToTimeStr(originalArrival + deltaMinutes);
+        }
         trip.stops[i].x_coord = timeToX(updatedTimeStr);
     }
 
@@ -1889,7 +2088,8 @@ function onNodeDrag(e) {
     updateTooltipPosition(e.clientX, e.clientY, `
         <strong>Trem:</strong> ${trip.train_code}<br>
         <strong>Estação:</strong> ${trip.stops[stopIdx].station}<br>
-        <strong>Novo Horário:</strong> ${newTimeStr.substring(0, 5)} (${deltaMinutes >= 0 ? '+' : ''}${Math.round(deltaMinutes)} min)
+        <strong>Novo Horário:</strong> ${newTimeStr.substring(0, 5)} (${deltaMinutes >= 0 ? '+' : ''}${Math.round(deltaMinutes)} min)<br>
+        <span style="color: #ec4899; font-weight: 600; font-size: 11px;">⚠️ Propaga em cascata para toda a grade futura</span>
     `);
 }
 
@@ -2347,11 +2547,55 @@ function setupChartPanAndWheel() {
     });
 
     container.addEventListener("wheel", (e) => {
-        if (Math.abs(e.deltaY) > 0 || Math.abs(e.deltaX) > 0) {
-            const scrollDelta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-            container.scrollLeft += scrollDelta;
-            e.preventDefault();
-            markUserInteraction();
+        e.preventDefault();
+        
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const svgX = container.scrollLeft + mouseX;
+        
+        const anchorMinutes = (svgX - MARGIN_LEFT) / pixelsPerMinute;
+
+        const zoomFactor = 1.12;
+        if (e.deltaY < 0) {
+            pixelsPerMinute *= zoomFactor;
+        } else {
+            pixelsPerMinute /= zoomFactor;
+        }
+        
+        pixelsPerMinute = Math.max(2, Math.min(60, pixelsPerMinute));
+
+        updateDimensions();
+        
+        const newSvgX = MARGIN_LEFT + anchorMinutes * pixelsPerMinute;
+        container.scrollLeft = newSvgX - mouseX;
+        
+        markUserInteraction();
+
+        if (!window.zoomRaf) {
+            window.zoomRaf = requestAnimationFrame(() => {
+                if (appState.mode === "operational") {
+                    renderChart();
+                } else if (appState.mode === "schedules") {
+                    renderScheduleEditor();
+                }
+                window.zoomRaf = null;
+            });
         }
     }, { passive: false });
 }
+
+let _resizeDebounce;
+window.addEventListener("resize", () => {
+    clearTimeout(_resizeDebounce);
+    _resizeDebounce = setTimeout(() => {
+        if (appState.mode === "operational" || appState.mode === "schedules") {
+            updateDimensions();
+            if (appState.mode === "operational") {
+                renderChart();
+            } else if (appState.mode === "schedules") {
+                renderScheduleEditor();
+            }
+        }
+    }, 150);
+});
+

@@ -5,17 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Gráfico de circulação ferroviária interativo para visualização e edição de escalas planejadas e realizadas.">
     <title>Grafico - Circulação Ferroviária Interativa</title>
-    
+
     <!-- Premium Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
-    <link rel="stylesheet" href="index.css">
+
+    <link rel="stylesheet" href="index.css?v=3">
     <script>
         (function() {
             var saved = localStorage.getItem('grafico-theme');
-            if (saved === 'dark') {
+            if (saved === 'light') {
+                document.documentElement.removeAttribute('data-theme');
+            } else {
                 document.documentElement.setAttribute('data-theme', 'dark');
             }
         })();
@@ -23,53 +25,84 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Header -->
-        <header class="app-header">
-            <div class="logo-area">
-                <span class="logo-icon">🛤️</span>
-                <div class="title-group">
-                    <h1 id="app-title">Grafico</h1>
-                    <p class="subtitle">Circulação Ferroviária &bullet; Linha 710</p>
-                </div>
-            </div>
 
-            <div class="mode-tabs">
-                <button class="tab-btn active" id="btn-mode-operational" onclick="switchMode('operational')">Operacional</button>
-                <button class="tab-btn" id="btn-mode-schedules" onclick="switchMode('schedules')">Grades</button>
-            </div>
-            
-            <div class="header-controls">
-                <div class="line-selector">
-                    <button class="tab-btn active" id="btn-l10" onclick="switchLine('Line 10')">Linha 10 (Turquesa)</button>
-                    <button class="tab-btn" id="btn-l7" onclick="switchLine('Line 7')">Linha 7 (Rubi)</button>
-                    <button class="tab-btn" id="btn-l710" onclick="switchLine('Line 710')">Linha 710 (Unificada)</button>
-                </div>
-
-                <div class="chart-action-buttons">
-                    <button class="btn btn-secondary btn-sm" id="btn-mock-real" onclick="loadMockRealizedData()">📈 Mostrar Realizado</button>
-                    <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetToOriginal()">🔄 Resetar</button>
-                </div>
-
-
-                <div class="file-upload-wrapper">
-                    <label for="json-upload" class="upload-label" id="upload-label-id">
-                        <span class="upload-icon">📂</span> Importar JSON
-                    </label>
-                    <input type="file" id="json-upload" accept=".json" onchange="handleFileUpload(event)">
-                </div>
-                
-                <button class="btn btn-primary" id="btn-save" onclick="exportData()">💾 Exportar Grade</button>
-                <button class="btn-theme-toggle" id="btn-auto-regulation" onclick="toggleAutoRegulation()" title="Regulação automática de partidas">⚙️</button>
-                <button class="btn-theme-toggle" id="btn-theme-toggle" onclick="toggleTheme()" title="Alternar modo claro/escuro">🌙</button>
-            </div>
-
-        </header>
-
-        <!-- Main Content Layout -->
+        <!-- Chart fills the whole screen; everything else lives in drawers -->
         <main class="main-content">
             <div id="operational-view">
-                <!-- Sidebar Left: odd-numbered trains (destino Barra Funda) -->
-                <aside class="sidebar sidebar-left glass-panel">
+                <section class="graphic-area">
+                    <div class="chart-viewport" id="chart-viewport">
+                        <div class="chart-scroll-container" id="chart-container">
+                            <!-- The SVG will be generated here dynamically -->
+                        </div>
+                        <div class="now-line-overlay" id="now-line-overlay">
+                            <div class="now-line"></div>
+                            <div class="now-line-label" id="now-line-label">--:--</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="schedules-view" class="hidden"></div>
+        </main>
+
+        <!-- Drawer: comandos (bottom dock) -->
+        <div class="drawer drawer-bottom" id="drawer-bottom">
+            <span class="drawer-tab drawer-tab-bottom">Comandos</span>
+            <header class="app-header">
+                <div class="logo-area">
+                    <span class="logo-icon">🛤️</span>
+                    <div class="title-group">
+                        <h1 id="app-title">Grafico</h1>
+                        <p class="subtitle">Circulação Ferroviária &bullet; Linha 710</p>
+                    </div>
+                </div>
+
+                <div class="mode-tabs">
+                    <button class="tab-btn active" id="btn-mode-operational" onclick="switchMode('operational')">Operacional</button>
+                    <button class="tab-btn" id="btn-mode-schedules" onclick="switchMode('schedules')">Grades</button>
+                </div>
+
+                <div class="header-controls">
+                    <div class="line-selector">
+                        <button class="tab-btn active" id="btn-l10" onclick="switchLine('Line 10')">Linha 10 (Turquesa)</button>
+                        <button class="tab-btn" id="btn-l7" onclick="switchLine('Line 7')">Linha 7 (Rubi)</button>
+                        <button class="tab-btn" id="btn-l710" onclick="switchLine('Line 710')">Linha 710 (Unificada)</button>
+                    </div>
+
+                    <div class="chart-action-buttons">
+                        <button class="btn btn-secondary btn-sm" id="btn-toggle-programmed" onclick="toggleProgrammed()">🛤️ Mostrar Programado</button>
+                        <button class="btn btn-secondary btn-sm" id="btn-mock-real" onclick="loadMockRealizedData()">📈 Mostrar Realizado</button>
+                        <button class="btn btn-secondary btn-sm" id="btn-reset" onclick="resetToOriginal()">🔄 Resetar</button>
+                    </div>
+
+                    <div class="file-upload-wrapper">
+                        <label for="json-upload" class="upload-label" id="upload-label-id">
+                            <span class="upload-icon">📂</span> Importar JSON
+                        </label>
+                        <input type="file" id="json-upload" accept=".json" onchange="handleFileUpload(event)">
+                    </div>
+
+                    <button class="btn btn-primary" id="btn-save" onclick="exportData()">💾 Exportar Grade</button>
+                    <button class="btn-theme-toggle" id="btn-auto-regulation" onclick="toggleAutoRegulation()" title="Regulação automática de partidas">⚙️</button>
+                    <button class="btn-theme-toggle" id="btn-theme-toggle" onclick="toggleTheme()" title="Alternar modo claro/escuro">🌙</button>
+
+                    <div class="legend">
+                        <span class="legend-item"><span class="line-style programmed-dot"></span> Programado</span>
+                        <span class="legend-item"><span class="line-style planned-dash"></span> Planejado</span>
+                        <span class="legend-item"><span class="line-style actual-solid"></span> Realizado</span>
+                        <span class="legend-item"><span class="node-style"></span> Nó Arrastável</span>
+                    </div>
+
+                    <label class="drawer-pin" title="Manter o dock sempre visível">
+                        <input type="checkbox" id="pin-bottom"><span>Fixar</span>
+                    </label>
+                </div>
+            </header>
+        </div>
+
+        <!-- Drawer: trens ímpares (esquerda) -->
+        <aside class="drawer drawer-left" id="drawer-left">
+            <div class="drawer-body">
                 <div class="panel-header">
                     <h2>Sentido BFU (Ímpares)</h2>
                     <span class="badge" id="train-count-odd">0 Trens</span>
@@ -81,37 +114,19 @@
                 </div>
 
                 <div class="train-list-container">
-                    <ul id="train-list-odd" class="train-list">
-                        <!-- Populated dynamically -->
-                    </ul>
-                </div>
-            </aside>
-
-            <!-- Graphic Display Area -->
-            <section class="graphic-area glass-panel">
-                <div class="panel-header">
-                    <h2>Diagrama de Horários (Gráfico de Marey)</h2>
-                    <div class="legend">
-                        <span class="legend-item"><span class="line-style planned-dash"></span> Planejado</span>
-                        <span class="legend-item"><span class="line-style actual-solid"></span> Realizado</span>
-                        <span class="legend-item"><span class="node-style"></span> Nó Arrastável</span>
-                    </div>
+                    <ul id="train-list-odd" class="train-list"></ul>
                 </div>
 
-                <!-- Viewport wrapper: hosts the scrollable chart plus the fixed-position "now" line overlay -->
-                <div class="chart-viewport" id="chart-viewport">
-                    <div class="chart-scroll-container" id="chart-container">
-                        <!-- The SVG will be generated here dynamically -->
-                    </div>
-                    <div class="now-line-overlay" id="now-line-overlay">
-                        <div class="now-line"></div>
-                        <div class="now-line-label" id="now-line-label">--:--</div>
-                    </div>
-                </div>
-            </section>
+                <label class="drawer-pin drawer-pin-footer" title="Manter esta gaveta sempre aberta">
+                    <input type="checkbox" id="pin-left"><span>Fixar aberta</span>
+                </label>
+            </div>
+            <span class="drawer-tab drawer-tab-side">BFU · Ímpares</span>
+        </aside>
 
-            <!-- Sidebar Right: even-numbered trains (destino RGS/Mauá) -->
-            <aside class="sidebar sidebar-right glass-panel">
+        <!-- Drawer: trens pares (direita) -->
+        <aside class="drawer drawer-right" id="drawer-right">
+            <div class="drawer-body">
                 <div class="panel-header">
                     <h2>Sentido RGS/Mauá (Pares)</h2>
                     <span class="badge" id="train-count-even">0 Trens</span>
@@ -123,16 +138,16 @@
                 </div>
 
                 <div class="train-list-container">
-                    <ul id="train-list-even" class="train-list">
-                        <!-- Populated dynamically -->
-                    </ul>
+                    <ul id="train-list-even" class="train-list"></ul>
                 </div>
-            </aside>
+
+                <label class="drawer-pin drawer-pin-footer" title="Manter esta gaveta sempre aberta">
+                    <input type="checkbox" id="pin-right"><span>Fixar aberta</span>
+                </label>
             </div>
-            
-            <div id="schedules-view" class="hidden"></div>
-        </main>
-        
+            <span class="drawer-tab drawer-tab-side">RGS/Mauá · Pares</span>
+        </aside>
+
         <!-- Live Tooltip -->
         <div id="tooltip" class="tooltip hidden"></div>
 
@@ -141,9 +156,32 @@
         </div>
         <ul id="context-menu" class="context-menu hidden"></ul>
     </div>
-    
+
     <!-- Application Logic -->
     <script src="app.js?v=3"></script>
+
+    <!-- Drawer pinning: remembers each drawer's pinned state between sessions -->
+    <script>
+        (function() {
+            var header = document.querySelector('.drawer-bottom .app-header');
+            if (header && window.ResizeObserver) {
+                var sync = function() {
+                    document.documentElement.style.setProperty('--header-h', header.offsetHeight + 'px');
+                };
+                new ResizeObserver(sync).observe(header);
+                sync();
+            }
+
+            document.querySelectorAll('.drawer-pin input').forEach(function(cb) {
+                var key = 'grafico-' + cb.id;
+                if (localStorage.getItem(key) === '1') cb.checked = true;
+                cb.addEventListener('change', function() {
+                    localStorage.setItem(key, cb.checked ? '1' : '0');
+                });
+            });
+        })();
+    </script>
+
 
 </body>
 </html>

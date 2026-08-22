@@ -127,6 +127,15 @@ def get_schedule(db: Session = Depends(get_db)):
     return service.get_live_schedule(db)
 
 
+@app.get("/api/schedule/programmed")
+def get_programmed_schedule():
+    import json
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    with open(data_dir / "schedule.json", "r") as f:
+        trips = json.load(f)
+    return {"trips": trips}
+
+
 @app.post("/api/template/import")
 async def import_template(trips: list[TemplateImportTrip], db: Session = Depends(get_db)):
     count = service.import_template(db, trips)
@@ -137,7 +146,7 @@ async def import_template(trips: list[TemplateImportTrip], db: Session = Depends
 @app.post("/api/stops/shift", response_model=TripOut)
 async def shift_stop(payload: ShiftRequest, db: Session = Depends(get_db)):
     trip = service.shift_stop(db, payload.trip_id, payload.station_id, payload.new_time)
-    await manager.broadcast({"type": "trip_updated", "trip": trip.model_dump()})
+    await manager.broadcast({"type": "schedule_reset"})
     return trip
 
 

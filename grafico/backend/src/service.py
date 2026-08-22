@@ -308,6 +308,9 @@ def shift_stop(
             f"Stop at {target.departure_time} is more than {lookback_minutes} minutes in the past"
         )
 
+    # Calculate the cascade start time based on the dragged trip's original terminal arrival time
+    cascade_start_minutes = time_str_to_service_minutes(stops[-1].arrival_time)
+
     # Raw minutes are fine for the delta: it is only ever added back through
     # minutes_to_time_str, which reduces modulo 24h, so a midnight-crossing delta
     # (e.g. 23:55 -> 00:05 giving -1430) lands on the same clock time as +10 would.
@@ -316,6 +319,26 @@ def shift_stop(
     for stop in stops[idx:]:
         stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + delta)
         stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
+
+    # Cascade the delay to all future departures in the entire chart (Manual Regulation)
+    # Only if automatic regulation is disabled, as they are two different paradigms.
+    if not get_auto_regulation_enabled(db):
+        all_trips = db.query(models.Trip).all()
+        for u_trip in all_trips:
+            if u_trip.id == trip_id:
+                continue
+                
+            u_stops = _trip_stops(db, u_trip.id)
+            if not u_stops:
+                continue
+                
+            # Only cascade to trips whose FIRST stop departs at or after the cascade start time.
+            # This prevents delaying intermediate nodes of trips that have already departed.
+            u_first_departure = time_str_to_service_minutes(u_stops[0].departure_time)
+            if u_first_departure >= cascade_start_minutes:
+                for stop in u_stops:
+                    stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + delta)
+                    stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
 
     db.commit()
 
