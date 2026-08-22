@@ -63,6 +63,66 @@ def test_apply_regulation_ramps_intermediate_departures(db_session):
     assert updated_by_id["D1"].stops[0].time == "06:05:00"
 
 
+def test_apply_regulation_mirrors_anchor_delta_onto_later_departures(db_session):
+    """Departures scheduled after the ramp's anchor (the turnaround-paired departure)
+    must shift by the anchor's exact delta too -- otherwise a late-running terminal
+    silently breaks the headway/order between the anchor and whatever comes after it."""
+    init_db(db_session.get_bind())
+    service.import_template(db_session, [
+        TemplateImportTrip(
+            trip_id="A1", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:00:00"),
+                TemplateImportStop(station="BFU", time="05:30:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="ARRIVAL", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:20:00"),
+                TemplateImportStop(station="BFU", time="05:50:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="D1", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="BFU", time="06:00:00"),
+                TemplateImportStop(station="RGS", time="06:30:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="D2", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="BFU", time="06:15:00"),
+                TemplateImportStop(station="RGS", time="06:45:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="D3", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="BFU", time="07:00:00"),
+                TemplateImportStop(station="RGS", time="07:30:00"),
+            ],
+        ),
+    ])
+    service.set_station_turnaround(db_session, "BFU", 20 * 60)
+    now = datetime(2026, 8, 16, 4, 30, 0)
+    service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
+
+    updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
+    updated_by_id = {t.trip_id: t for t in updated}
+
+    # Anchor (D2) still lands exactly on target; D1 still tapers as before.
+    assert updated_by_id["D2"].stops[0].time == "06:25:00"
+    assert updated_by_id["D1"].stops[0].time == "06:05:00"
+    # D3 is after the anchor, so it must mirror the anchor's +10min delta exactly
+    # (not taper), preserving its planned spacing behind D2.
+    assert "D3" in updated_by_id
+    assert updated_by_id["D3"].stops[0].time == "07:10:00"
+    d3 = service.get_trip(db_session, "D3")
+    assert d3.stops[1].time == "07:40:00"  # whole downstream route mirrors too
+
+
 def test_apply_regulation_is_noop_when_no_violation(db_session):
     _seed_turnaround_scenario(db_session)
     now = datetime(2026, 8, 16, 4, 30, 0)
@@ -120,7 +180,9 @@ def test_apply_regulation_is_noop_when_station_turnaround_not_configured(db_sess
             ],
         ),
     ])
-    # BFU's turnaround is deliberately left unconfigured (None).
+    # Every station defaults to 180s (init_db backfill); explicitly clear BFU to simulate
+    # an operator excluding it from turnaround pairing/validation.
+    service.set_station_turnaround(db_session, "BFU", None)
     now = datetime(2026, 8, 16, 4, 30, 0)
     service.shift_stop(db_session, "ARRIVAL", "BFU", "06:05:00", now=now)
 
@@ -190,6 +252,45 @@ def test_apply_regulation_compresses_departures_when_excess_becomes_negative(db_
 
     assert updated_by_id["D2"].stops[0].time == "06:17:00"
     assert updated_by_id["D1"].stops[0].time == "06:01:00"
+
+
+def test_apply_regulation_skips_early_departures_from_stabled_trains(db_session):
+    """A train that departs before any arrival that morning (stabled/recolhimento) must
+    not be positionally paired with the first arrival of the day."""
+    init_db(db_session.get_bind())
+    service.import_template(db_session, [
+        TemplateImportTrip(
+            trip_id="D0", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="BFU", time="04:00:00"),
+                TemplateImportStop(station="RGS", time="04:30:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="ARRIVAL", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:20:00"),
+                TemplateImportStop(station="BFU", time="05:50:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="D1", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="BFU", time="06:00:00"),
+                TemplateImportStop(station="RGS", time="06:30:00"),
+            ],
+        ),
+    ])
+    service.set_station_turnaround(db_session, "BFU", 20 * 60)
+    now = datetime(2026, 8, 16, 4, 30, 0)
+
+    updated = service.apply_regulation(db_session, "ARRIVAL", "BFU", now=now)
+    updated_by_id = {t.trip_id: t for t in updated}
+
+    # ARRIVAL (05:50) must pair with D1 (06:00, the first departure at/after its arrival),
+    # never with D0 (04:00, already gone before ARRIVAL got there).
+    assert "D0" not in updated_by_id
+    assert updated_by_id["D1"].stops[0].time == "06:10:00"
 
 
 def test_apply_regulation_redistributes_compression_when_a_departure_cannot_recede(db_session):

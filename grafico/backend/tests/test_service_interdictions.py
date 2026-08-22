@@ -1,7 +1,7 @@
 from datetime import datetime
 import pytest
 
-from src import service, models
+from src import service, models, interdiction as interdiction_geometry
 from src.db import init_db
 from src.errors import InterdictionNotFoundError
 from src.schemas import TemplateImportStop, TemplateImportTrip
@@ -87,6 +87,17 @@ def _seed_two_opposite_trips_plus_later_departures(db_session):
                 TemplateImportStop(station="BFU", time="07:00:00"),
                 TemplateImportStop(station="SAN", time="07:20:00"),
                 TemplateImportStop(station="RGS", time="07:40:00"),
+            ],
+        ),
+        # Well after every arrival in this scenario, and after the interdiction's own
+        # 05:00-06:00 window, so it never gets held -- exists only so the FIFO-paired
+        # cascade recipient (TRIP_RGS-BFU_060000) has an eligible departure to test against.
+        TemplateImportTrip(
+            trip_id="TRIP_BFU-RGS_080000", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="08:00:00"),
+                TemplateImportStop(station="SAN", time="08:20:00"),
+                TemplateImportStop(station="RGS", time="08:40:00"),
             ],
         ),
     ])
@@ -331,10 +342,17 @@ def test_interdiction_delay_triggers_auto_regulation_when_enabled(db_session):
             ],
         ),
         TemplateImportTrip(
+            trip_id="D0", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="04:00:00"),
+                TemplateImportStop(station="RGS", time="04:20:00"),
+            ],
+        ),
+        TemplateImportTrip(
             trip_id="D1", direction="BFU-RGS",
             stops=[
-                TemplateImportStop(station="BFU", time="04:55:00"),
-                TemplateImportStop(station="RGS", time="05:20:00"),
+                TemplateImportStop(station="BFU", time="06:05:00"),
+                TemplateImportStop(station="RGS", time="06:30:00"),
             ],
         ),
     ])
@@ -353,9 +371,16 @@ def test_interdiction_delay_triggers_auto_regulation_when_enabled(db_session):
     bfu_arrival = next(s.time for s in rgs_bfu.stops if s.station == "BFU")
     assert bfu_arrival == "05:32:47"  # delayed by the interdiction (held at the edge)
 
+    # D0 (BFU 04:00) departed well before "now" (04:30) and before the arrival -- a
+    # stabled/recolhimento train, outside both the FIFO pairing window and the ramp's
+    # own future-departures set, so it must be left completely untouched.
+    d0 = service.get_trip(db_session, "D0")
+    assert d0.stops[0].time == "04:00:00"
+
     d1 = service.get_trip(db_session, "D1")
-    # Target = new BFU arrival (05:32:47) + 5min turnaround = 05:37:47; D1 was the only
-    # BFU-RGS departure paired with this arrival and must be ramped to hit it exactly.
+    # Target = new BFU arrival (05:32:47) + 5min turnaround = 05:37:47; D1 is the first
+    # FIFO-eligible departure (D0 and TRIP_BFU-RGS_050000 are both earlier than the
+    # arrival) and, as the ramp's anchor, must land exactly on target.
     assert d1.stops[0].time == "05:37:47"
 
 
@@ -509,22 +534,32 @@ def test_cascade_recipients_do_not_trigger_auto_regulation(db_session):
     )
 
     # The directly held trip still regulates its own paired departure (Spec 4 behaviour
-    # that must not regress): TRIP_BFU-RGS_050000 is paired with TRIP_RGS-BFU_050500's
-    # BFU arrival and gets ramped to arrival + 5min turnaround.
+    # that must not regress). FIFO pairing skips TRIP_BFU-RGS_050000 (05:00, already
+    # departed before this arrival's original 05:30 -- a stabled/recolhimento train) and
+    # pairs TRIP_RGS-BFU_050500's BFU arrival with the next eligible departure,
+    # TRIP_BFU-RGS_070000, which -- as the ramp's anchor -- must land exactly on target
+    # (the ramp still tapers TRIP_BFU-RGS_050000 a little on the way there; that taper is
+    # pre-existing Spec 4 behaviour, not something this fix changes or needs to assert).
     held = service.get_trip(db_session, "TRIP_RGS-BFU_050500")
     held_bfu_arrival = next(s.arrival_time for s in held.stops if s.station == "BFU")
-    paired_with_held = service.get_trip(db_session, "TRIP_BFU-RGS_050000")
+    paired_with_held = service.get_trip(db_session, "TRIP_BFU-RGS_070000")
     assert time_str_to_minutes(paired_with_held.stops[0].time) == pytest.approx(
         time_str_to_minutes(held_bfu_arrival) + 5, abs=2 / 60
     )
 
     # TRIP_RGS-BFU_060000 is only a *cascade* recipient (headway preservation), never a
-    # directly held trip -- its shifted BFU arrival must not run the tapering regulation
-    # ramp on its paired departure TRIP_BFU-RGS_070000.
+    # directly held trip -- it must never independently trigger its own tapering
+    # regulation ramp. TRIP_BFU-RGS_080000 (070000 is already taken by the directly-held
+    # trip above) does still move, but only because apply_regulation mirrors the anchor's
+    # exact delta onto every later departure at the station -- if 060000 had instead
+    # triggered its own regulation, 080000 would land on a different target (060000's own,
+    # cascade-shifted arrival + turnaround), not the anchor's delta mirrored verbatim.
     cascade_recipient = service.get_trip(db_session, "TRIP_RGS-BFU_060000")
     assert next(s.time for s in cascade_recipient.stops if s.station == "SAN") != "06:10:00"  # sanity
-    paired_with_cascade = service.get_trip(db_session, "TRIP_BFU-RGS_070000")
-    assert paired_with_cascade.stops[0].time == "07:00:00"
+    paired_with_cascade = service.get_trip(db_session, "TRIP_BFU-RGS_080000")
+    held_delta = time_str_to_minutes(paired_with_held.stops[0].time) - time_str_to_minutes("07:00:00")
+    cascade_shift = time_str_to_minutes(paired_with_cascade.stops[0].time) - time_str_to_minutes("08:00:00")
+    assert cascade_shift == pytest.approx(held_delta, abs=2 / 60)
 
 
 def _seed_hold_plus_cascade_recipient(db_session):
@@ -609,3 +644,76 @@ def test_interdiction_writes_respect_the_edit_lookback_floor(db_session):
     assert ("R", "SAN") not in snapshot_keys
     assert ("A", "BFU") in snapshot_keys
     assert ("R", "BFU") in snapshot_keys
+
+
+def _crossing_window_for(db_session, trip_id, y_top, y_bottom):
+    stops = service._trip_stops(db_session, trip_id)
+    station_y = service._station_y_lookup(db_session)
+    geometry_stops = [(station_y.get(s.station_id, 0.0), s.arrival_time, s.departure_time) for s in stops]
+    return interdiction_geometry.crossing_window(geometry_stops, y_top, y_bottom)
+
+
+def test_shift_stop_reconciles_active_interdictions_to_prevent_new_conflicts(db_session):
+    _seed_two_opposite_trips(db_session)
+    service.import_template(db_session, [
+        TemplateImportTrip(
+            trip_id="TRIP_BFU-RGS_050000", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="05:00:00"),
+                TemplateImportStop(station="SAN", time="05:20:00"),
+                TemplateImportStop(station="RGS", time="05:40:00"),
+            ],
+        ),
+        TemplateImportTrip(
+            trip_id="TRIP_RGS-BFU_050500", direction="RGS-BFU",
+            stops=[
+                TemplateImportStop(station="RGS", time="05:00:00"),
+                TemplateImportStop(station="SAN", time="05:10:00"),
+                TemplateImportStop(station="BFU", time="05:30:00"),
+            ],
+        ),
+        # Initially departs at 08:00 -- well outside the 05:00-06:00 interdiction window
+        # below, so create_interdiction never touches it.
+        TemplateImportTrip(
+            trip_id="TRIP_BFU-RGS_080000", direction="BFU-RGS",
+            stops=[
+                TemplateImportStop(station="BFU", time="08:00:00"),
+                TemplateImportStop(station="SAN", time="08:20:00"),
+                TemplateImportStop(station="RGS", time="08:40:00"),
+            ],
+        ),
+    ])
+    service.set_current_schedule_id(1)
+    now = datetime(2026, 8, 16, 4, 30, 0)
+    service.perform_daily_reset(db_session, now=now)
+
+    service.create_interdiction(
+        db_session, y_top=3500.0, y_bottom=5000.0,
+        start_time="05:00:00", end_time="06:00:00", description="Obra",
+        now=now,
+    )
+
+    # A dispatcher drags TRIP_BFU-RGS_080000's origin from 08:00 to 05:10 -- same shape as
+    # TRIP_BFU-RGS_050000's original (unregulated) schedule, so if the interdiction is never
+    # re-evaluated, this reintroduces the exact conflict the queue algorithm exists to
+    # prevent: two opposite-direction trains crossing the same interdicted band at once.
+    service.shift_stop(db_session, "TRIP_BFU-RGS_080000", "BFU", "05:10:00", now=now)
+
+    dragged = {s.station: s for s in service.get_trip(db_session, "TRIP_BFU-RGS_080000").stops}
+    # If the drag had been left unregulated, BFU would still read exactly "05:10:00".
+    assert dragged["BFU"].time != "05:10:00", (
+        "shift_stop must re-run the active interdiction's queue so a manually-dragged trip "
+        "that now conflicts with it gets held too, not left crossing unregulated"
+    )
+
+    held_window = _crossing_window_for(db_session, "TRIP_RGS-BFU_050500", 3500.0, 5000.0)
+    dragged_window = _crossing_window_for(db_session, "TRIP_BFU-RGS_080000", 3500.0, 5000.0)
+    assert held_window is not None and dragged_window is not None
+
+    held_entry, held_exit, _ = held_window
+    dragged_entry, dragged_exit, _ = dragged_window
+    # No two opposite-direction trains may occupy the single-track band at the same time --
+    # touching exactly at the border (within a couple seconds' rounding) is fine, same
+    # tolerance the rest of this file uses for time-string round-tripping.
+    tolerance = 2 / 60
+    assert dragged_entry >= held_exit - tolerance or held_entry >= dragged_exit - tolerance

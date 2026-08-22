@@ -518,21 +518,6 @@ svg {
     fill: #dc2626;
 }
 
-/* Train Lines - Past / Realized (Viagens Realizadas) */
-.train-path-past {
-    fill: none !important;
-    stroke: #ef4444 !important;
-    stroke-width: 2.5px !important;
-    stroke-dasharray: none !important;
-    transition: stroke-width 0.2s, stroke 0.2s;
-    cursor: pointer;
-}
-
-.train-path-past:hover {
-    stroke-width: 4.5px !important;
-    stroke: #f87171 !important;
-}
-
 /* Floating Station Labels - Pinned to Vertical Hour / Now Line */
 .floating-station-label {
     font-size: 11px;

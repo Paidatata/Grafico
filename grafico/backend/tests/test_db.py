@@ -79,6 +79,30 @@ def test_init_db_adds_turnaround_seconds_to_stations_table(db_session):
     init_db(bind)  # idempotent re-run must not error
 
 
+def test_init_db_seeds_fresh_stations_with_default_turnaround(db_session):
+    init_db(db_session.get_bind())
+
+    bfu = db_session.query(Station).filter(Station.id == "BFU").first()
+    assert bfu.turnaround_seconds == 180
+
+
+def test_init_db_backfills_unconfigured_stations_without_overwriting_operator_choice(db_session):
+    init_db(db_session.get_bind())
+
+    # Simulate a pre-existing DB from before the default existed (NULL), and an operator
+    # who already set their own value on another station.
+    db_session.query(Station).filter(Station.id == "BFU").update({"turnaround_seconds": None})
+    db_session.query(Station).filter(Station.id == "RGS").update({"turnaround_seconds": 240})
+    db_session.commit()
+
+    init_db(db_session.get_bind())  # re-run must backfill BFU, leave RGS alone
+
+    bfu = db_session.query(Station).filter(Station.id == "BFU").first()
+    rgs = db_session.query(Station).filter(Station.id == "RGS").first()
+    assert bfu.turnaround_seconds == 180
+    assert rgs.turnaround_seconds == 240
+
+
 def test_get_trip_exposes_arrival_time_per_stop(db_session):
     init_db(db_session.get_bind())
     service.import_template(db_session, [

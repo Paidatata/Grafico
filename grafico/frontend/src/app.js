@@ -962,16 +962,23 @@ function computeTurnaroundPairs() {
                 .filter(t => t.active_first_seq !== -1 && effectiveFirstStop(t) && effectiveFirstStop(t).station === stationId && t.direction !== dIn)
                 .sort((a, b) => timeStrToServiceMinutes(effectiveFirstStop(a).time) - timeStrToServiceMinutes(effectiveFirstStop(b).time));
 
-            // Positional pairing: the i-th arrival with the i-th departure, in chronological
-            // order (same physical train, same platform). Leftovers on either side are simply
-            // unpaired -- not an error.
-            const pairCount = Math.min(arrivals.length, departures.length);
-            for (let i = 0; i < pairCount; i++) {
-                const arrivalTrip = arrivals[i];
-                const departureTrip = departures[i];
+            // FIFO pairing: each arrival (in chronological order) takes the earliest
+            // unassigned departure whose time is >= its own arrival time. Departures
+            // earlier than every arrival they could serve are stabled/recolhimento trains
+            // (parked/injected before the first arrival of the day) and are left unpaired
+            // -- not an error. Pairing by position alone would wrongly match those against
+            // the day's first arrivals, producing negative gaps.
+            let di = 0;
+            for (const arrivalTrip of arrivals) {
                 const arrTimeStr = effectiveLastStop(arrivalTrip).time;
-                const departureTime = effectiveFirstStop(departureTrip).time;
                 const arrMin = timeStrToServiceMinutes(arrTimeStr);
+                while (di < departures.length && timeStrToServiceMinutes(effectiveFirstStop(departures[di]).time) < arrMin) {
+                    di++;
+                }
+                if (di >= departures.length) break;
+                const departureTrip = departures[di];
+                di++;
+                const departureTime = effectiveFirstStop(departureTrip).time;
                 const depMin = timeStrToServiceMinutes(departureTime);
                 const gapSeconds = (depMin - arrMin) * 60;
 
@@ -1425,14 +1432,18 @@ function renderChart() {
         ]);
     });
 
+    // Append (still empty) and restore scroll BEFORE drawing anything -- drawTrainPaths and
+    // drawTurnaroundConnectors call getReferenceTime(), which reads container.scrollLeft to
+    // find "now". Drawing first and restoring scroll after (the old order) meant every
+    // redraw classified past/future using scrollLeft=0 (reset by the innerHTML clear above),
+    // freezing every trip's line as "future" (dashed) regardless of its actual time.
+    container.appendChild(svg);
+    container.scrollLeft = oldScrollLeft;
+
     drawGrid(svg);
     drawTrainPaths(svg);
     drawTurnaroundConnectors(svg);
     drawInterdictions(svg);
-
-    
-    container.appendChild(svg);
-    container.scrollLeft = oldScrollLeft;
 }
 
 function drawGrid(svg) {

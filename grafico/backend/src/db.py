@@ -43,6 +43,7 @@ STATIONS_METADATA = [
 ]
 
 DEFAULT_LOOKBACK_MINUTES = "15"
+DEFAULT_TURNAROUND_SECONDS = 180  # 3 min -- every station starts here; an operator's save overrides it until changed again
 
 
 def make_session_factory(db_path: str):
@@ -66,6 +67,12 @@ def init_db(target_engine=None) -> None:
             existing_cols = {row[1] for row in db.execute(text("PRAGMA table_info(stations)"))}
             if "turnaround_seconds" not in existing_cols:
                 db.execute(text("ALTER TABLE stations ADD COLUMN turnaround_seconds INTEGER"))
+            # Backfill only -- an operator's explicit save is never overwritten by this, since
+            # a saved value is never NULL again. One-time per station, idempotent on every call.
+            db.execute(
+                text("UPDATE stations SET turnaround_seconds = :default WHERE turnaround_seconds IS NULL"),
+                {"default": DEFAULT_TURNAROUND_SECONDS},
+            )
         except Exception as e:
             print(f"Erro ao verificar ou atualizar tabela stations: {e}")
 
@@ -100,7 +107,7 @@ def init_db(target_engine=None) -> None:
 
         if db.query(Station).count() == 0:
             for station in STATIONS_METADATA:
-                db.add(Station(**station))
+                db.add(Station(turnaround_seconds=DEFAULT_TURNAROUND_SECONDS, **station))
 
         if db.query(Setting).filter(Setting.key == "edit_lookback_minutes").first() is None:
             db.add(Setting(key="edit_lookback_minutes", value=DEFAULT_LOOKBACK_MINUTES))

@@ -320,8 +320,26 @@ def shift_stop(
     db.commit()
 
     _maybe_auto_regulate(db, trip_id, now)
+    _reconcile_interdictions(db, now)
 
     return get_trip(db, trip_id)
+
+
+def _reconcile_interdictions(db: Session, now: datetime) -> None:
+    """Re-runs Passo 1+2 for every existing interdiction.
+
+    Interdictions otherwise only react to their own create/edit/delete -- a plain node
+    drag on some other trip never touches them. If that drag introduces a new crossing
+    conflict inside an already-active interdiction's window, nothing catches it: the
+    dragged trip crosses unregulated, alongside whatever the interdiction already queued,
+    defeating the one guarantee interdictions exist to provide (one train in the band at
+    a time). Revert-then-reapply is the same pattern update_interdiction already uses to
+    keep one interdiction self-consistent after its own edits; this just does it for all
+    of them after any shift_stop.
+    """
+    for existing in db.query(models.Interdiction).all():
+        _revert_interdiction(db, existing.id, now)
+        _apply_interdiction(db, existing, now)
 
 
 def _maybe_auto_regulate(db: Session, trip_id: str, now: datetime) -> None:
@@ -356,6 +374,31 @@ def _effective_first_stop(trip: models.Trip, stops: list[models.PlannedStop]):
 def _effective_last_stop(trip: models.Trip, stops: list[models.PlannedStop]):
     first, last = _effective_stop_bounds(trip, stops)
     return stops[last] if 0 <= first <= last < len(stops) else None
+
+
+def _match_arrivals_to_departures(
+    arrivals: list[tuple[models.Trip, list[models.PlannedStop]]],
+    departures: list[tuple[models.Trip, list[models.PlannedStop]]],
+) -> dict[str, tuple[models.Trip, list[models.PlannedStop]]]:
+    """FIFO pairing: each arrival (in chronological order) takes the earliest unassigned
+    departure whose time is >= its own arrival time. Departures earlier than every arrival
+    they could serve are stabled/recolhimento trips and are left unpaired -- pairing by
+    position alone would wrongly match them against the day's first arrivals, producing
+    negative gaps (trem chega no futuro e parte no passado).
+    """
+    pairing: dict[str, tuple[models.Trip, list[models.PlannedStop]]] = {}
+    di = 0
+    for arrival_trip, arrival_stops in arrivals:
+        arrival_sm = time_str_to_service_minutes(_effective_last_stop(arrival_trip, arrival_stops).arrival_time)
+        while di < len(departures) and (
+            time_str_to_service_minutes(_effective_first_stop(*departures[di]).departure_time) < arrival_sm
+        ):
+            di += 1
+        if di >= len(departures):
+            break
+        pairing[arrival_trip.id] = departures[di]
+        di += 1
+    return pairing
 
 
 def apply_regulation(
@@ -393,10 +436,11 @@ def apply_regulation(
         ),
         key=lambda ts: time_str_to_service_minutes(_effective_first_stop(ts[0], ts[1]).departure_time),
     )
-    arrival_idx = next((i for i, (t, _) in enumerate(arrivals) if t.id == arrival_trip_id), None)
-    if arrival_idx is None or arrival_idx >= len(departures):
+    pairing = _match_arrivals_to_departures(arrivals, departures)
+    match = pairing.get(arrival_trip_id)
+    if match is None:
         return []
-    departure_trip, departure_stops = departures[arrival_idx]
+    departure_trip, departure_stops = match
 
     target_sm = time_str_to_service_minutes(arrival_stop.arrival_time) + turnaround_sec / 60
     departure_stop = _effective_first_stop(departure_trip, departure_stops)
@@ -447,6 +491,26 @@ def apply_regulation(
             stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + delta)
             stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + delta)
         updated.append(trip.id)
+
+    # Every departure still to come after the anchor mirrors its exact delta (not a
+    # taper) -- the anchor just became the new baseline for this station/direction, so
+    # everything scheduled behind it must move with it to keep its planned spacing.
+    # Same floor protection as the ramp: a later departure that can't recede past the
+    # lookback floor stays put rather than getting written into the frozen past.
+    anchor_delta = deltas.get(anchor_trip_id, 0)
+    if anchor_delta:
+        active_ids = {t.id for t, _ in active_candidates}
+        for trip, stops in future_departures[anchor_idx + 1:]:
+            if trip.id in active_ids:
+                continue
+            first_idx, _ = _effective_stop_bounds(trip, stops)
+            departure_sm = time_str_to_service_minutes(_effective_first_stop(trip, stops).departure_time)
+            if departure_sm + anchor_delta < floor_sm:
+                continue
+            for stop in stops[first_idx:]:
+                stop.arrival_time = minutes_to_time_str(time_str_to_minutes(stop.arrival_time) + anchor_delta)
+                stop.departure_time = minutes_to_time_str(time_str_to_minutes(stop.departure_time) + anchor_delta)
+            updated.append(trip.id)
 
     db.commit()
     return [get_trip(db, trip_id) for trip_id in updated]

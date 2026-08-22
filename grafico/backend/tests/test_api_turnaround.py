@@ -4,7 +4,9 @@ def test_put_turnaround_round_trip(app_client):
     assert response.json() == {"turnaround_seconds": 600}
 
     schedule = app_client.get("/api/schedule").json()
-    assert schedule["station_turnarounds"] == {"RGS": 600}
+    # Every station starts at the 180s default; this save overrides only RGS.
+    assert schedule["station_turnarounds"]["RGS"] == 600
+    assert schedule["station_turnarounds"]["BFU"] == 180
 
 
 def test_put_turnaround_unknown_station_returns_404(app_client):
